@@ -1,7 +1,7 @@
 from typing import List, Optional, Tuple, Union
 
 from transformers import (AutoTokenizer, PreTrainedTokenizer,
-                          PreTrainedTokenizerFast)
+                          PreTrainedTokenizerFast, LlamaTokenizer)
 
 from vllm.logger import init_logger
 
@@ -34,12 +34,19 @@ def get_tokenizer(
             f"using '{_FAST_LLAMA_TOKENIZER}' instead of the original "
             "tokenizer.")
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            tokenizer_name,
-            *args,
-            trust_remote_code=trust_remote_code,
-            tokenizer_revision=tokenizer_revision,
-            **kwargs)
+        if "llama" in tokenizer_name.lower() or "llava" in tokenizer_name.lower():
+            tokenizer = LlamaTokenizer.from_pretrained(
+                tokenizer_name, *args,
+                trust_remote_code=trust_remote_code,
+                tokenizer_revision=tokenizer_revision,
+                **kwargs)
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(
+                tokenizer_name,
+                *args,
+                trust_remote_code=trust_remote_code,
+                tokenizer_revision=tokenizer_revision,
+                **kwargs)
     except TypeError as e:
         # The LLaMA tokenizer causes a protobuf error in some environments.
         err_msg = (
