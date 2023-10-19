@@ -62,7 +62,7 @@ async def generate(request: Request) -> Response:
         yield (json.dumps(ret) + "\0").encode("utf-8")
 
     if stream:
-        return StreamingResponse(stream_results())
+        return StreamingResponse(stream_results(), media_type="text/event-stream")
 
     # Non-streaming case
     final_output: Optional[RequestOutput] = None
