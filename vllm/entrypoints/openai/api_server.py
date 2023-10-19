@@ -295,23 +295,20 @@ async def create_chat_completion(request: ChatCompletionRequest,
 
         previous_texts = [""] * request.n
         previous_num_tokens = [0] * request.n
-        num_completion_tokens = [0] * request.n
         async for res in result_generator:
             res: RequestOutput
             for output in res.outputs:
                 i = output.index
                 delta_text = output.text[len(previous_texts[i]):]
                 previous_texts[i] = output.text
-                output_tokens = len(output.token_ids)
-                previous_num_tokens[i] = output_tokens
-                num_completion_tokens[i] += output_tokens
+                completion_tokens = len(output.token_ids)
+                previous_num_tokens[i] = completion_tokens
                 response_json = create_stream_response_json(
                     index=i,
                     text=delta_text,
                 )
                 yield f"data: {response_json}\n\n"
                 if output.finish_reason is not None:
-                    completion_tokens = num_completion_tokens[i]
                     prompt_tokens = len(res.prompt_token_ids)
                     response_json = create_final_stream_response_json(
                         index=i,
