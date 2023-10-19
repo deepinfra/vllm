@@ -233,15 +233,40 @@ async def create_chat_completion(request: ChatCompletionRequest,
     result_generator = engine.generate(prompt, sampling_params, request_id,
                                        token_ids)
 
+    def create_final_stream_response_json(
+        index: int,
+        finish_reason: str = None,
+        prompt_tokens: int = None,
+        completion_tokens: int = None,
+        total_tokens: int = None,
+    ) -> str:
+        choice_data = ChatCompletionResponseStreamChoice(
+            index=index,
+            delta=DeltaMessage(content=""),
+            finish_reason=finish_reason,
+        )
+        usage = UsageInfo(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
+        response = ChatCompletionStreamResponse(
+            id=request_id,
+            created=created_time,
+            model=model_name,
+            choices=[choice_data],
+            usage=usage,
+        )
+        return response.json(exclude_unset=True, ensure_ascii=False)
+
     def create_stream_response_json(
         index: int,
         text: str,
-        finish_reason: Optional[str] = None,
     ) -> str:
         choice_data = ChatCompletionResponseStreamChoice(
             index=index,
             delta=DeltaMessage(content=text),
-            finish_reason=finish_reason,
+            finish_reason=None,
         )
         response = ChatCompletionStreamResponse(
             id=request_id,
@@ -249,7 +274,8 @@ async def create_chat_completion(request: ChatCompletionRequest,
             model=model_name,
             choices=[choice_data],
         )
-        response_json = response.json(ensure_ascii=False)
+        # exclude unset to leave details out of each sse
+        response_json = response.json(exclude_unset=True, ensure_ascii=False)
 
         return response_json
 
@@ -269,23 +295,30 @@ async def create_chat_completion(request: ChatCompletionRequest,
 
         previous_texts = [""] * request.n
         previous_num_tokens = [0] * request.n
+        num_completion_tokens = [0] * request.n
         async for res in result_generator:
             res: RequestOutput
             for output in res.outputs:
                 i = output.index
                 delta_text = output.text[len(previous_texts[i]):]
                 previous_texts[i] = output.text
-                previous_num_tokens[i] = len(output.token_ids)
+                output_tokens = len(output.token_ids)
+                previous_num_tokens[i] = output_tokens
+                num_completion_tokens[i] += output_tokens
                 response_json = create_stream_response_json(
                     index=i,
                     text=delta_text,
                 )
                 yield f"data: {response_json}\n\n"
                 if output.finish_reason is not None:
-                    response_json = create_stream_response_json(
+                    completion_tokens = num_completion_tokens[i]
+                    prompt_tokens = len(res.prompt_token_ids)
+                    response_json = create_final_stream_response_json(
                         index=i,
-                        text="",
                         finish_reason=output.finish_reason,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=prompt_tokens + completion_tokens
                     )
                     yield f"data: {response_json}\n\n"
         yield "data: [DONE]\n\n"
