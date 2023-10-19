@@ -477,17 +477,45 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
               and (request.best_of is None or request.n == request.best_of)
               and not request.use_beam_search)
 
+    def create_final_stream_response_json(
+        index: int,
+        logprobs: Optional[LogProbs] = None,
+        finish_reason: str = None,
+        prompt_tokens: int = None,
+        completion_tokens: int = None,
+        total_tokens: int = None,
+    ) -> str:
+        choice_data = CompletionResponseStreamChoice(
+            index=index,
+            text="",
+            logprobs=logprobs,
+            finish_reason=finish_reason,
+        )
+        usage = UsageInfo(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
+        response = CompletionStreamResponse(
+            id=request_id,
+            created=created_time,
+            model=model_name,
+            choices=[choice_data],
+            usage=usage
+        )
+        return response.json(exclude_unset=True, ensure_ascii=False)
+
+
     def create_stream_response_json(
         index: int,
         text: str,
         logprobs: Optional[LogProbs] = None,
-        finish_reason: Optional[str] = None,
     ) -> str:
         choice_data = CompletionResponseStreamChoice(
             index=index,
             text=text,
             logprobs=logprobs,
-            finish_reason=finish_reason,
+            finish_reason=None,
         )
         response = CompletionStreamResponse(
             id=request_id,
@@ -495,7 +523,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
             model=model_name,
             choices=[choice_data],
         )
-        response_json = response.json(ensure_ascii=False)
+        response_json = response.json(exclude_unset=True, ensure_ascii=False)
 
         return response_json
 
@@ -525,11 +553,15 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
                 if output.finish_reason is not None:
                     logprobs = (LogProbs()
                                 if request.logprobs is not None else None)
-                    response_json = create_stream_response_json(
+                    prompt_tokens = len(res.prompt_token_ids)
+                    completion_tokens = len(output.token_ids)
+                    response_json = create_final_stream_response_json(
                         index=i,
-                        text="",
                         logprobs=logprobs,
                         finish_reason=output.finish_reason,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=prompt_tokens + completion_tokens
                     )
                     yield f"data: {response_json}\n\n"
         yield "data: [DONE]\n\n"
