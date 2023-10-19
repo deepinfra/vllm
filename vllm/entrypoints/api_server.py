@@ -37,22 +37,19 @@ async def generate(request: Request) -> Response:
 
     # Streaming case
     async def stream_results() -> AsyncGenerator[bytes, None]:
-        completion_tokens = 0
         final_output: Optional[RequestOutput] = None
-        text_outputs = []
         async for request_output in results_generator:
             prompt = request_output.prompt
             final_output = request_output
             text_outputs = [
                 prompt + output.text for output in request_output.outputs
             ]
-            completion_tokens += sum(len(output.token_ids) for output in request_output.outputs)
+
             ret = {"text": text_outputs}
             yield (json.dumps(ret) + "\0").encode("utf-8")
         prompt_tokens = len(final_output.prompt_token_ids) if final_output else 0
-
+        completion_tokens = sum(len(output.token_ids) for output in final_output.outputs)
         ret = {
-            "text": text_outputs,
             "details": {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
