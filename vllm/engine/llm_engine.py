@@ -18,6 +18,12 @@ from vllm.transformers_utils.tokenizer import (detokenize_incrementally,
                                                get_tokenizer)
 from vllm.utils import Counter
 
+try:
+    from aioprometheus import Gauge
+    _prometheus_available = True
+except ImportError:
+    _prometheus_available = False
+
 if ray:
     from ray.air.util.torch_dist import init_torch_dist_process_group
     from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
@@ -28,6 +34,14 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 _LOGGING_INTERVAL_SEC = 5
+if _prometheus_available:
+    gauge_avg_prompt_throughput = Gauge("vllm:avg_prompt_throughput", "Avg prefill throughput")
+    gauge_avg_generation_throughput = Gauge("vllm:avg_generation_throughput", "Avg prefill throughput")
+    gauge_scheduler_running = Gauge("vllm:scheduler_running", "Num requests running")
+    gauge_scheduler_swapped = Gauge("vllm:scheduler_swapped", "Num requests swapped")
+    gauge_scheduler_waiting = Gauge("vllm:scheduler_waiting", "Num requests waiting")
+    gauge_gpu_cache_usage = Gauge("vllm:gpu_cache_usage", "GPU KV-cache usage")
+    gauge_cpu_cache_usage = Gauge("vllm:cpu_cache_usage", "CPU KV-cache usage")
 
 
 class LLMEngine:
@@ -614,6 +628,15 @@ class LLMEngine:
             cpu_cache_usage = num_used_cpu_blocks / total_num_cpu_blocks
         else:
             cpu_cache_usage = 0.0
+
+        if _prometheus_available:
+            gauge_avg_prompt_throughput.set({}, avg_prompt_throughput)
+            gauge_avg_generation_throughput.set({}, avg_generation_throughput)
+            gauge_scheduler_running.set({}, len(self.scheduler.running))
+            gauge_scheduler_swapped.set({}, len(self.scheduler.swapped))
+            gauge_scheduler_waiting.set({}, len(self.scheduler.waiting))
+            gauge_gpu_cache_usage.set({}, gpu_cache_usage)
+            gauge_cpu_cache_usage.set({}, cpu_cache_usage)
 
         logger.info("Avg prompt throughput: "
                     f"{avg_prompt_throughput:.1f} tokens/s, "
