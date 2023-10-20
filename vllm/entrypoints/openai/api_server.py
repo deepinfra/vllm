@@ -7,6 +7,8 @@ import json
 import time
 from http import HTTPStatus
 from typing import AsyncGenerator, Dict, List, Optional, Tuple, Union
+from aioprometheus import Counter, MetricsMiddleware
+from aioprometheus.asgi.starlette import metrics
 
 import fastapi
 import uvicorn
@@ -45,6 +47,9 @@ logger = init_logger(__name__)
 served_model = None
 app = fastapi.FastAPI()
 engine = None
+
+app.add_middleware(MetricsMiddleware)
+app.add_route("/metrics", metrics)
 
 
 def create_error_response(status_code: HTTPStatus,
