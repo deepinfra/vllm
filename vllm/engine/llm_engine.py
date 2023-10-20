@@ -589,10 +589,6 @@ class LLMEngine:
         else:
             self.num_generation_tokens.append((now, num_batched_tokens))
 
-        elapsed_time = now - self.last_logging_time
-        # if elapsed_time < _LOGGING_INTERVAL_SEC:
-        #     return
-
         # Discard the old stats.
         self.num_prompt_tokens = [(t, n) for t, n in self.num_prompt_tokens
                                   if now - t < _LOGGING_INTERVAL_SEC]
@@ -638,16 +634,18 @@ class LLMEngine:
             gauge_gpu_cache_usage.set({}, gpu_cache_usage)
             gauge_cpu_cache_usage.set({}, cpu_cache_usage)
 
-        logger.info("Avg prompt throughput: "
-                    f"{avg_prompt_throughput:.1f} tokens/s, "
-                    "Avg generation throughput: "
-                    f"{avg_generation_throughput:.1f} tokens/s, "
-                    f"Running: {len(self.scheduler.running)} reqs, "
-                    f"Swapped: {len(self.scheduler.swapped)} reqs, "
-                    f"Pending: {len(self.scheduler.waiting)} reqs, "
-                    f"GPU KV cache usage: {gpu_cache_usage * 100:.1f}%, "
-                    f"CPU KV cache usage: {cpu_cache_usage * 100:.1f}%, "
-                    f"logging took: {time.monotonic() - now}")
+        elapsed_time = now - self.last_logging_time
+        if elapsed_time > _LOGGING_INTERVAL_SEC:
+            logger.info("Avg prompt throughput: "
+                        f"{avg_prompt_throughput:.1f} tokens/s, "
+                        "Avg generation throughput: "
+                        f"{avg_generation_throughput:.1f} tokens/s, "
+                        f"Running: {len(self.scheduler.running)} reqs, "
+                        f"Swapped: {len(self.scheduler.swapped)} reqs, "
+                        f"Pending: {len(self.scheduler.waiting)} reqs, "
+                        f"GPU KV cache usage: {gpu_cache_usage * 100:.1f}%, "
+                        f"CPU KV cache usage: {cpu_cache_usage * 100:.1f}%, "
+                        f"logging took: {time.monotonic() - now}")
         self.last_logging_time = now
 
     def _decode_sequence(self, seq: Sequence,
