@@ -590,8 +590,8 @@ class LLMEngine:
             self.num_generation_tokens.append((now, num_batched_tokens))
 
         elapsed_time = now - self.last_logging_time
-        if elapsed_time < _LOGGING_INTERVAL_SEC:
-            return
+        # if elapsed_time < _LOGGING_INTERVAL_SEC:
+        #     return
 
         # Discard the old stats.
         self.num_prompt_tokens = [(t, n) for t, n in self.num_prompt_tokens
@@ -646,7 +646,8 @@ class LLMEngine:
                     f"Swapped: {len(self.scheduler.swapped)} reqs, "
                     f"Pending: {len(self.scheduler.waiting)} reqs, "
                     f"GPU KV cache usage: {gpu_cache_usage * 100:.1f}%, "
-                    f"CPU KV cache usage: {cpu_cache_usage * 100:.1f}%")
+                    f"CPU KV cache usage: {cpu_cache_usage * 100:.1f}%, "
+                    f"logging took: {time.monotonic() - now}")
         self.last_logging_time = now
 
     def _decode_sequence(self, seq: Sequence,
