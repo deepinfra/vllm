@@ -233,40 +233,16 @@ async def create_chat_completion(request: ChatCompletionRequest,
     result_generator = engine.generate(prompt, sampling_params, request_id,
                                        token_ids)
 
-    def create_final_stream_response_json(
-        index: int,
-        finish_reason: str = None,
-        prompt_tokens: int = None,
-        completion_tokens: int = None,
-        total_tokens: int = None,
-    ) -> str:
-        choice_data = ChatCompletionResponseStreamChoice(
-            index=index,
-            delta=DeltaMessage(content=""),
-            finish_reason=finish_reason,
-        )
-        usage = UsageInfo(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-        )
-        response = ChatCompletionStreamResponse(
-            id=request_id,
-            created=created_time,
-            model=model_name,
-            choices=[choice_data],
-            usage=usage,
-        )
-        return response.json(exclude_unset=True, ensure_ascii=False)
-
     def create_stream_response_json(
         index: int,
         text: str,
+        finish_reason: str = None,
+        usage: UsageInfo = None,
     ) -> str:
         choice_data = ChatCompletionResponseStreamChoice(
             index=index,
             delta=DeltaMessage(content=text),
-            finish_reason=None,
+            finish_reason=finish_reason,
         )
         response = ChatCompletionStreamResponse(
             id=request_id,
@@ -274,6 +250,8 @@ async def create_chat_completion(request: ChatCompletionRequest,
             model=model_name,
             choices=[choice_data],
         )
+        if usage is not None:
+            response.usage = usage
         # exclude unset to leave details out of each sse
         response_json = response.json(exclude_unset=True, ensure_ascii=False)
 
@@ -310,14 +288,18 @@ async def create_chat_completion(request: ChatCompletionRequest,
                 yield f"data: {response_json}\n\n"
                 if output.finish_reason is not None:
                     prompt_tokens = len(res.prompt_token_ids)
-                    response_json = create_final_stream_response_json(
-                        index=i,
-                        finish_reason=output.finish_reason,
+                    final_usage = UsageInfo(
                         prompt_tokens=prompt_tokens,
                         completion_tokens=completion_tokens,
-                        total_tokens=prompt_tokens + completion_tokens
+                        total_tokens=prompt_tokens + completion_tokens,
                     )
-                    yield f"data: {response_json}\n\n"
+                    final_response_json = create_stream_response_json(
+                        index=i,
+                        text="",
+                        finish_reason=output.finish_reason,
+                        usage=final_usage,
+                    )
+                    yield f"data: {final_response_json}\n\n"
         yield "data: [DONE]\n\n"
 
     # Streaming response
