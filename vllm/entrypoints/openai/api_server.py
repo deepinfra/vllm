@@ -236,8 +236,8 @@ async def create_chat_completion(request: ChatCompletionRequest,
     def create_stream_response_json(
         index: int,
         text: str,
-        finish_reason: str = None,
-        usage: UsageInfo = None,
+        finish_reason: Optional[str] = None,
+        usage: Optional[UsageInfo] = None,
     ) -> str:
         choice_data = ChatCompletionResponseStreamChoice(
             index=index,
@@ -293,13 +293,13 @@ async def create_chat_completion(request: ChatCompletionRequest,
                         completion_tokens=completion_tokens,
                         total_tokens=prompt_tokens + completion_tokens,
                     )
-                    final_response_json = create_stream_response_json(
+                    response_json = create_stream_response_json(
                         index=i,
                         text="",
                         finish_reason=output.finish_reason,
                         usage=final_usage,
                     )
-                    yield f"data: {final_response_json}\n\n"
+                    yield f"data: {response_json}\n\n"
         yield "data: [DONE]\n\n"
 
     # Streaming response
@@ -459,45 +459,18 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
               and (request.best_of is None or request.n == request.best_of)
               and not request.use_beam_search)
 
-    def create_final_stream_response_json(
-        index: int,
-        logprobs: Optional[LogProbs] = None,
-        finish_reason: str = None,
-        prompt_tokens: int = None,
-        completion_tokens: int = None,
-        total_tokens: int = None,
-    ) -> str:
-        choice_data = CompletionResponseStreamChoice(
-            index=index,
-            text="",
-            logprobs=logprobs,
-            finish_reason=finish_reason,
-        )
-        usage = UsageInfo(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-        )
-        response = CompletionStreamResponse(
-            id=request_id,
-            created=created_time,
-            model=model_name,
-            choices=[choice_data],
-            usage=usage
-        )
-        return response.json(exclude_unset=True, ensure_ascii=False)
-
-
     def create_stream_response_json(
         index: int,
         text: str,
         logprobs: Optional[LogProbs] = None,
+        finish_reason: Optional[str] = None,
+        usage: Optional[UsageInfo] = None,
     ) -> str:
         choice_data = CompletionResponseStreamChoice(
             index=index,
             text=text,
             logprobs=logprobs,
-            finish_reason=None,
+            finish_reason=finish_reason,
         )
         response = CompletionStreamResponse(
             id=request_id,
@@ -505,6 +478,8 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
             model=model_name,
             choices=[choice_data],
         )
+        if usage is not None:
+            response.usage = usage
         response_json = response.json(exclude_unset=True, ensure_ascii=False)
 
         return response_json
@@ -537,13 +512,17 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
                                 if request.logprobs is not None else None)
                     prompt_tokens = len(res.prompt_token_ids)
                     completion_tokens = len(output.token_ids)
-                    response_json = create_final_stream_response_json(
-                        index=i,
-                        logprobs=logprobs,
-                        finish_reason=output.finish_reason,
+                    final_usage = UsageInfo(
                         prompt_tokens=prompt_tokens,
                         completion_tokens=completion_tokens,
-                        total_tokens=prompt_tokens + completion_tokens
+                        total_tokens=prompt_tokens + completion_tokens,
+                    )
+                    response_json = create_stream_response_json(
+                        index=i,
+                        text="",
+                        logprobs=logprobs,
+                        finish_reason=output.finish_reason,
+                        usage=final_usage,
                     )
                     yield f"data: {response_json}\n\n"
         yield "data: [DONE]\n\n"
