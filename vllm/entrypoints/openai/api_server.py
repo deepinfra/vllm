@@ -6,6 +6,7 @@ import asyncio
 import codecs
 import json
 import time
+import os.path
 from http import HTTPStatus
 from typing import AsyncGenerator, Dict, List, Optional, Tuple, Union
 
@@ -33,6 +34,7 @@ from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer import get_tokenizer
 from vllm.utils import random_uuid
+from vllm.lora.request import LoRARequest
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -41,6 +43,7 @@ served_model = None
 app = fastapi.FastAPI()
 engine = None
 response_role = None
+args = None
 
 
 def parse_args():
@@ -80,6 +83,12 @@ def parse_args():
                         default="assistant",
                         help="The role name to return if "
                         "`request.add_generation_prompt=true`.")
+    parser.add_argument("--enable-lora-separator",
+                        type=str,
+                        help="Enable joining model and lora name by this separator")
+    parser.add_argument("--lora-root-dir",
+                        type=str,
+                        help="Look for loras in this local directory")
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     return parser.parse_args()
@@ -120,14 +129,18 @@ async def validation_exception_handler(_, exc):
     return create_error_response(HTTPStatus.BAD_REQUEST, str(exc))
 
 
-async def check_model(request) -> Optional[JSONResponse]:
-    if request.model == served_model:
-        return
-    ret = create_error_response(
+async def check_model(request) -> tuple[Optional[LoRARequest], Optional[JSONResponse]]:
+    request_model, lora_request, lora_err = split_lora(request.model)
+    if lora_err:
+        return None, lora_err
+
+    if request_model == served_model:
+        return lora_request, None
+    err = create_error_response(
         HTTPStatus.NOT_FOUND,
-        f"The model `{request.model}` does not exist.",
+        f"The model `{request_model}` does not exist.",
     )
-    return ret
+    return None, err
 
 
 async def check_length(
@@ -221,7 +234,7 @@ async def create_chat_completion(request: ChatCompletionRequest,
         - function_call (Users should implement this by themselves)
         - logit_bias (to be supported by vLLM engine)
     """
-    error_check_ret = await check_model(request)
+    lora_request, error_check_ret = await check_model(request)
     if error_check_ret is not None:
         return error_check_ret
 
@@ -271,7 +284,7 @@ async def create_chat_completion(request: ChatCompletionRequest,
         return create_error_response(HTTPStatus.BAD_REQUEST, str(e))
 
     result_generator = engine.generate(prompt, sampling_params, request_id,
-                                       token_ids)
+                                       token_ids, lora_request=lora_request)
 
     def get_role() -> str:
         if request.add_generation_prompt:
@@ -430,6 +443,35 @@ async def create_chat_completion(request: ChatCompletionRequest,
         return await completion_full_generator()
 
 
+lora_name_to_id = {}
+def get_lora_id(lora_name):
+    if lora_name not in lora_name_to_id:
+        lora_name_to_id[lora_name] = len(lora_name_to_id) + 1
+    return lora_name_to_id[lora_name]
+
+
+def split_lora(full_model: str) -> tuple[str, Optional[LoRARequest], Optional[JSONResponse]]:
+    if args.enable_lora_separator and args.enable_lora_separator in full_model:
+        request_model, lora_name = full_model.split(args.enable_lora_separator, 1)
+    else:
+        request_model = full_model
+        lora_name = None
+
+    lora_request = None
+    err = None
+    if lora_name:
+        lora_path = os.path.join(args.lora_root_dir, lora_name)
+        if os.path.isdir(lora_path):
+            lora_request = LoRARequest(
+                lora_id=lora_name,
+                lora_int_id=get_lora_id(lora_name),
+                lora_local_path=lora_path)
+        else:
+            err = create_error_response(HTTPStatus.NOT_FOUND, f"lora {lora_name} not found")
+
+    return request_model, lora_request, err
+
+
 @app.post("/v1/completions")
 async def create_completion(request: CompletionRequest, raw_request: Request):
     """Completion API similar to OpenAI's API.
@@ -443,7 +485,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         - logit_bias (to be supported by vLLM engine)
     """
 
-    error_check_ret = await check_model(request)
+    lora_request, error_check_ret = await check_model(request)
     if error_check_ret is not None:
         return error_check_ret
 
@@ -521,10 +563,11 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         result_generator = engine.generate(None,
                                            sampling_params,
                                            request_id,
-                                           prompt_token_ids=prompt)
+                                           prompt_token_ids=prompt,
+                                           lora_request=lora_request)
     else:
         result_generator = engine.generate(prompt, sampling_params, request_id,
-                                           token_ids)
+                                           token_ids, lora_request=lora_request)
 
     # Similar to the OpenAI API, when n != best_of, we do not stream the
     # results. In addition, we do not stream the results when use beam search.
