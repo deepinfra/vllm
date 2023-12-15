@@ -185,7 +185,7 @@ class EngineArgs:
         parser.add_argument('--quantization',
                             '-q',
                             type=str,
-                            choices=['awq', 'squeezellm', None],
+                            choices=['awq', 'gptq', 'squeezellm', None],
                             default=None,
                             help='Method used to quantize the weights')
         # LoRA related configs
