@@ -40,4 +40,9 @@ def get_config(model: str,
         config = config_class.from_pretrained(model,
                                               revision=revision,
                                               code_revision=code_revision)
+
+    if config.model_type == "llava":
+        config.num_attention_heads = config.text_config.num_attention_heads
+        config.hidden_size = config.text_config.hidden_size
+        config.num_hidden_layers = config.text_config.num_hidden_layers
     return config

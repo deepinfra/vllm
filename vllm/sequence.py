@@ -74,20 +74,24 @@ class SequenceData:
 
     Args:
         prompt_token_ids: The token IDs of the prompt.
+        extra_data: Extra data for the multimodality models.
 
     Attributes:
         prompt_token_ids: The token IDs of the prompt.
         output_token_ids: The token IDs of the output.
         cumulative_logprob: The cumulative log probability of the output.
+        extra_data: Extra data for the multimodality models.
     """
 
     def __init__(
         self,
         prompt_token_ids: List[int],
+        extra_data: Optional[dict] = None,
     ) -> None:
         self.prompt_token_ids = prompt_token_ids
         self.output_token_ids: List[int] = []
         self.cumulative_logprob = 0.0
+        self.extra_data = extra_data
 
     def append_token_id(self, token_id: int, logprob: float) -> None:
         self.output_token_ids.append(token_id)
@@ -127,6 +131,13 @@ class Sequence:
         block_size: The block size of the sequence. Should be the same as the
             block size used by the block manager and cache engine.
         lora_request: LoRA request.
+        extra_data: Extra data for the multimodality models. This data will be
+            sent directly to the model.forward. e.g if three Sequence has 
+            extra_data = {'pix': [1,2] } 
+            extra_data = {'pix': [1], 'text': 'str'} 
+            extra_data = None
+            this will call model.forward(...,
+                pix=[[1,2], [1], None], text=[None, 'str', None])
     """
 
     def __init__(
@@ -136,13 +147,14 @@ class Sequence:
         prompt_token_ids: List[int],
         block_size: int,
         lora_request: Optional[LoRARequest] = None,
+        extra_data: Optional[dict] = None,
     ) -> None:
         self.seq_id = seq_id
         self.prompt = prompt
         self.block_size = block_size
         self.lora_request = lora_request
 
-        self.data = SequenceData(prompt_token_ids)
+        self.data = SequenceData(prompt_token_ids, extra_data=extra_data)
         self.output_logprobs: SampleLogprobs = []
         self.output_text = ""
 

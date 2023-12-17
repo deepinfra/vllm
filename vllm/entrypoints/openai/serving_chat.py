@@ -1,10 +1,12 @@
 import time
+import requests
 import codecs
 from fastapi import Request
 from typing import AsyncGenerator, AsyncIterator, Optional, List, Union
 from vllm.logger import init_logger
 from vllm.utils import random_uuid
 from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm.engine.async_llava_engine import AsyncLLaVAEngine
 from vllm.entrypoints.openai.protocol import (
     ChatCompletionRequest, ChatCompletionResponse,
     ChatCompletionResponseChoice, ChatCompletionResponseStreamChoice,
@@ -18,17 +20,36 @@ logger = init_logger(__name__)
 
 class OpenAIServingChat(OpenAIServing):
 
-    def __init__(self,
-                 engine: AsyncLLMEngine,
-                 served_model: str,
-                 response_role: str,
-                 lora_modules: Optional[List[LoRA]] = None,
-                 chat_template=None):
-        super().__init__(engine=engine,
-                         served_model=served_model,
-                         lora_modules=lora_modules)
+    def __init__(
+        self,
+        engine: Union[AsyncLLMEngine, AsyncLLaVAEngine],
+        served_model: str,
+        response_role: str,
+        lora_modules: Optional[List[LoRA]] = None,
+        chat_template=None,
+        model_type=None,
+    ):
+        super().__init__(engine=engine, served_model=served_model, lora_modules=lora_modules)
         self.response_role = response_role
         self._load_chat_template(chat_template)
+        self.model_type = model_type
+
+    def read_image(self, image=None):
+        from io import BytesIO
+        from PIL import Image
+        import base64
+
+        if isinstance(image, str):
+
+            if image.startswith("http"):
+                return (Image.open(requests.get(image, stream=True).raw))
+            elif image.startswith("data:"):
+                return (Image.open(BytesIO(base64.b64decode(image.split(",")[1]))))
+            else:
+                return (Image.open(BytesIO(base64.b64decode(image))))
+        else:
+            raise ValueError(
+                "image must be str(http url or base64(starting with data:))")
 
     async def create_chat_completion(
         self, request: ChatCompletionRequest, raw_request: Request
@@ -52,28 +73,62 @@ class OpenAIServingChat(OpenAIServing):
             return self.create_error_response(
                 "logit_bias is not currently supported")
 
+        chat_config = request.chat_config if request.chat_config else {}
+        prompt = ""
         try:
-            prompt = self.tokenizer.apply_chat_template(
-                conversation=request.messages,
-                tokenize=False,
-                add_generation_prompt=request.add_generation_prompt)
+            images = []
+            if self.model_type == "vision":
+                for message in request.messages:
+                    if message["role"] == "user":
+                        prompt += chat_config.get("user_prefix",
+                                                  "USER:\n")  # "USER:\n"
+                        for content in message["content"]:
+                            if content["type"] == "text":
+                                prompt += f"{content['text']}\n"
+                            if content["type"] == "image_url":
+                                # read the image
+                                url = content["image_url"]["url"]
+                                image = self.read_image(url)
+                                images.append(image)
+                                prompt += chat_config.get(
+                                    "image_token", "<image>\n")
+                    if message["role"] == "assistant":
+                        prompt += chat_config.get(
+                            "assistant_prefix",
+                            "ASSISTANT:\n")  # "ASSISTANT:\n"
+                        for content in message["content"]:
+                            if content["type"] == "text":
+                                prompt += f"{content['text']}\n"
+
+                prompt += chat_config.get("assistant_prefix", "ASSISTANT:\n")
+
+                print("PROMPT "*5, prompt)
+            else:
+                prompt = self.tokenizer.apply_chat_template(
+                    conversation=request.messages,
+                    tokenize=False,
+                    add_generation_prompt=request.add_generation_prompt)
+
         except Exception as e:
             logger.error(
                 f"Error in applying chat template from request: {str(e)}")
             return self.create_error_response(str(e))
 
         request_id = f"cmpl-{random_uuid()}"
+
         try:
+            # if not self.model_type == "vision":
+            #     token_ids = None
+            # else:
             token_ids = self._validate_prompt_and_tokenize(request,
-                                                           prompt=prompt)
+                                                            prompt=prompt)
             sampling_params = request.to_sampling_params()
             lora_request = self._maybe_get_lora(request)
         except ValueError as e:
             return self.create_error_response(str(e))
 
         result_generator = self.engine.generate(prompt, sampling_params,
-                                                request_id, token_ids,
-                                                lora_request)
+                                                request_id, token_ids, lora_request, images=images)
         # Streaming response
         if request.stream:
             return self.chat_completion_stream_generator(

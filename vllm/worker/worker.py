@@ -193,6 +193,7 @@ class Worker:
         blocks_to_swap_in: Optional[Dict[int, int]] = None,
         blocks_to_swap_out: Optional[Dict[int, int]] = None,
         blocks_to_copy: Optional[Dict[int, List[int]]] = None,
+        runner_method: str = "execute_model",
     ) -> Optional[SamplerOutput]:
         if self.is_driver_worker:
             assert seq_group_metadata_list is not None
@@ -220,12 +221,25 @@ class Worker:
         if num_seq_groups == 0:
             return {}
 
-        output = self.model_runner.execute_model(seq_group_metadata_list,
-                                                 self.gpu_cache)
+        output = self.model_runner.__getattribute__(runner_method)(
+            seq_group_metadata_list, self.gpu_cache)
         return output
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
         return self.model_runner.add_lora(lora_request)
+
+    @torch.inference_mode()
+    def execute_model_method(
+        self,
+        model_method: str,
+        *args,
+        **kwargs,
+    ):
+        """Directly execute some none distributed model method. Just a temporary hack.
+        For the image token replace of the llava model.
+        """
+        return self.model_runner.model.__getattribute__(model_method)(
+            *args, **kwargs)
 
     def remove_lora(self, lora_id: int) -> bool:
         return self.model_runner.remove_lora(lora_id)

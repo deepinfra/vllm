@@ -1,6 +1,7 @@
 import contextlib
 import time
 from typing import Dict, List, Optional, Tuple, Set, Union
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -476,10 +477,23 @@ class ModelRunner:
             # all decodes.
             is_prompt = seq_group_metadata_list[0].is_prompt
             # Prepare input tensors.
+            extra_kwargs = {}
             if is_prompt:
                 (input_tokens, input_positions, input_metadata, prompt_lens,
                  subquery_lens, lora_index_mapping, lora_prompt_mapping,
                  lora_requests) = self._prepare_prompt(seq_group_metadata_list)
+                # Collect extra data for each prompt from seq_group_metadata_list. e.g. image pixel values, image features
+                if input_tokens.shape[1] > 1:
+                    extra_kwargs = defaultdict(
+                        lambda: [None for _ in range(input_tokens.shape[0])])
+                    # Not in the stage of  generation with cache
+                    for i, seq_group_metadata in enumerate(
+                            seq_group_metadata_list):
+                        extra_data = seq_group_metadata.seq_data[list(
+                            seq_group_metadata.seq_data.keys())[0]].extra_data
+                        if extra_data is not None:
+                            for key, v in extra_data.items():
+                                extra_kwargs[key][i] = v
             else:
                 (input_tokens, input_positions, input_metadata,
                  lora_index_mapping, lora_prompt_mapping,
@@ -549,8 +563,7 @@ class ModelRunner:
                 perform_sampling=False,
             )
 
-        return (input_tokens, input_positions, input_metadata,
-                sampling_metadata, lora_requests, lora_mapping)
+        return input_tokens, input_positions, input_metadata, sampling_metadata, lora_requests, lora_mapping, extra_kwargs
 
     @torch.inference_mode()
     def execute_model(
@@ -558,9 +571,8 @@ class ModelRunner:
         seq_group_metadata_list: Optional[List[SequenceGroupMetadata]],
         kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
     ) -> Optional[SamplerOutput]:
-        (input_tokens, input_positions, input_metadata, sampling_metadata,
-         lora_requests,
-         lora_mapping) = self.prepare_input_tensors(seq_group_metadata_list)
+        input_tokens, input_positions, input_metadata, sampling_metadata, lora_requests, lora_mapping, extra_kwargs = (
+            self.prepare_input_tensors(seq_group_metadata_list))
 
         if self.lora_config:
             self.set_active_loras(lora_requests, lora_mapping)
@@ -577,6 +589,38 @@ class ModelRunner:
             kv_caches=kv_caches,
             input_metadata=input_metadata,
         )
+
+        # Sample the next token.
+        output = self.model.sample(
+            hidden_states=hidden_states,
+            sampling_metadata=sampling_metadata,
+        )
+        return output
+
+    @torch.inference_mode()
+    def execute_llava_model(
+        self,
+        seq_group_metadata_list: List[SequenceGroupMetadata],
+        kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
+        cache_events: Optional[List[torch.cuda.Event]] = None,
+    ) -> SamplerOutput:
+        # NOTE: We assume that all sequences in the group are all prompts or
+        # all decodes.
+        # Prepare input tensors.
+        input_tokens, input_positions, input_metadata, sampling_metadata, lora_requests, lora_mapping, extra_kwargs = (
+            self.prepare_input_tensors(seq_group_metadata_list))
+
+        # Execute the model.
+        if input_metadata.use_cuda_graph:
+            graph_batch_size = input_tokens.shape[0]
+            model_executable = self.graph_runners[graph_batch_size]
+        else:
+            model_executable = self.model
+        hidden_states = model_executable(input_ids=input_tokens,
+                                         positions=input_positions,
+                                         kv_caches=kv_caches,
+                                         input_metadata=input_metadata,
+                                         **extra_kwargs)
 
         # Sample the next token.
         output = self.model.sample(
@@ -817,19 +861,24 @@ class CUDAGraphRunner:
         positions: torch.Tensor,
         kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
         input_metadata: InputMetadata,
+        **kwargs,
     ) -> torch.Tensor:
         # KV caches are fixed tensors, so we don't need to copy them.
         del kv_caches
 
         # Copy the input tensors to the input buffers.
-        self.input_buffers["input_ids"].copy_(input_ids, non_blocking=True)
-        self.input_buffers["positions"].copy_(positions, non_blocking=True)
-        self.input_buffers["slot_mapping"].copy_(input_metadata.slot_mapping,
-                                                 non_blocking=True)
-        self.input_buffers["context_lens"].copy_(input_metadata.context_lens,
-                                                 non_blocking=True)
-        self.input_buffers["block_tables"].copy_(input_metadata.block_tables,
-                                                 non_blocking=True)
+        self.input_buffers["input_ids"].copy_(input_ids)
+        self.input_buffers["positions"].copy_(positions)
+        self.input_buffers["slot_mapping"].copy_(input_metadata.slot_mapping)
+        self.input_buffers["context_lens"].copy_(input_metadata.context_lens)
+        self.input_buffers["block_tables"].copy_(input_metadata.block_tables)
+        for key, value in kwargs.items():
+            # Hack, Only surrport values that do not change the graph.
+            #   The image_features is only used to substitute the input_ids and won't change the graph.
+            if self.input_buffers.get(key, None) is not None:
+                self.input_buffers[key].copy_(value)
+            else:
+                self.input_buffers[key] = value
 
         # Run the graph.
         self.graph.replay()

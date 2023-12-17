@@ -485,6 +485,8 @@ class AsyncLLMEngine:
         prompt_token_ids: Optional[List[int]] = None,
         lora_request: Optional[LoRARequest] = None,
         prefix_pos: Optional[int] = None,
+        *args,
+        **kwargs,
     ) -> AsyncIterator[RequestOutput]:
         """Generate outputs for a request.
 
