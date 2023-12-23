@@ -35,6 +35,7 @@ class EngineArgs:
     quantization: Optional[str] = None
     enforce_eager: bool = False
     max_context_len_to_capture: int = 8192
+    moe_topk: Optional[int] = None
 
     def __post_init__(self):
         if self.tokenizer is None:
@@ -202,6 +203,10 @@ class EngineArgs:
                             help='maximum context length covered by CUDA '
                             'graphs. When a sequence has context length '
                             'larger than this, we fall back to eager mode.')
+        parser.add_argument('--moe-topk',
+                            type=int,
+                            default=None,
+                            help='topk for MoE models. If None, will use the default value in the model config file.')
         return parser
 
     @classmethod
@@ -221,7 +226,8 @@ class EngineArgs:
                                    self.dtype, self.seed, self.revision,
                                    self.tokenizer_revision, self.max_model_len,
                                    self.quantization, self.enforce_eager,
-                                   self.max_context_len_to_capture)
+                                   self.max_context_len_to_capture,
+                                   self.moe_topk)
         cache_config = CacheConfig(self.block_size,
                                    self.gpu_memory_utilization,
                                    self.swap_space,

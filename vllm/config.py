@@ -73,6 +73,7 @@ class ModelConfig:
         quantization: Optional[str] = None,
         enforce_eager: bool = False,
         max_context_len_to_capture: Optional[int] = None,
+        moe_topk: Optional[int] = None,
     ) -> None:
         self.model = model
         self.tokenizer = tokenizer
@@ -86,6 +87,7 @@ class ModelConfig:
         self.quantization = quantization
         self.enforce_eager = enforce_eager
         self.max_context_len_to_capture = max_context_len_to_capture
+        self.moe_topk = moe_topk
 
         if os.environ.get("VLLM_USE_MODELSCOPE", "False").lower() == "true":
             # download model from ModelScope hub,
@@ -99,6 +101,15 @@ class ModelConfig:
             self.tokenizer = model_path
 
         self.hf_config = get_config(self.model, trust_remote_code, revision)
+        if self.moe_topk is not None:
+            if not hasattr(self.hf_config, "num_local_experts"):
+                raise ValueError(
+                    f"moe_topk ({self.moe_topk}) is specified, but the model is not MoE.")
+            if self.moe_topk > self.hf_config.num_local_experts or self.moe_topk < 1:
+                raise ValueError(
+                    f"moe_topk ({self.moe_topk}) must be between 1 and "
+                    f"num_local_experts ({self.hf_config.num_local_experts}).")
+            self.hf_config.num_experts_per_tok = self.moe_topk
         self.dtype = _get_and_verify_dtype(self.hf_config, dtype)
         self.max_model_len = _get_and_verify_max_len(self.hf_config,
                                                      max_model_len)
