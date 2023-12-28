@@ -294,6 +294,7 @@ class OpenAIServingChat(OpenAIServing):
             completion_tokens=num_generated_tokens,
             total_tokens=num_prompt_tokens + num_generated_tokens,
         )
+
         response = ChatCompletionResponse(
             id=request_id,
             created=created_time,
