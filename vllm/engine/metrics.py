@@ -24,6 +24,18 @@ gauge_gpu_cache_usage = Gauge(
 gauge_cpu_cache_usage = Gauge(
     "vllm:cpu_cache_usage_perc",
     "CPU KV-cache usage. 1 means 100 percent usage.")
+gauge_max_gen_time_ms = Gauge(
+    "vllm:max_gen_time_ms",
+    "Longest time to step a batch in milliseconds.")
+gauge_avg_gen_time_ms = Gauge(
+    "vllm:avg_gen_time_ms",
+    "Average time to step a batch in milliseconds.")
+gauge_max_prompt_time_ms = Gauge(
+    "vllm:max_prompt_time_ms",
+    "Longest time to step a prompt prefetch in milliseconds.")
+gauge_avg_prompt_time_ms = Gauge(
+    "vllm:avg_prompt_time_ms",
+    "Average time to step a prompt prefetch in milliseconds.")
 # end-metrics-definitions
 
 labels = {}
@@ -41,6 +53,10 @@ def record_metrics(
     scheduler_waiting: int,
     gpu_cache_usage: float,
     cpu_cache_usage: float,
+    avg_gen_time_ms: float,
+    max_gen_time_ms: float,
+    avg_prompt_time_ms: float,
+    max_prompt_time_ms: float,
 ):
     gauge_avg_prompt_throughput.set(labels, avg_prompt_throughput)
     gauge_avg_generation_throughput.set(labels, avg_generation_throughput)
@@ -49,3 +65,7 @@ def record_metrics(
     gauge_scheduler_waiting.set(labels, scheduler_waiting)
     gauge_gpu_cache_usage.set(labels, gpu_cache_usage)
     gauge_cpu_cache_usage.set(labels, cpu_cache_usage)
+    gauge_avg_gen_time_ms.set(labels, avg_gen_time_ms)
+    gauge_max_gen_time_ms.set(labels, max_gen_time_ms)
+    gauge_avg_prompt_time_ms.set(labels, avg_prompt_time_ms)
+    gauge_max_prompt_time_ms.set(labels, max_prompt_time_ms)
