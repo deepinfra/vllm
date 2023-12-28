@@ -121,6 +121,7 @@ async def completion_stream_generator(
                     ],
                     usage=final_usage,
                 ).model_dump_json(exclude_unset=True)
+
                 yield f"data: {response_json}\n\n"
 
     yield "data: [DONE]\n\n"

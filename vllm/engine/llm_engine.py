@@ -725,10 +725,9 @@ class LLMEngine:
                 seq_group.remove(seq.seq_id)
                 self.scheduler.free_seq(seq)
 
-    def _process_model_outputs(
-            self, output: SamplerOutput,
-            scheduler_outputs: SchedulerOutputs) -> List[RequestOutput]:
-        now = time.time()
+    def _process_model_outputs(self, output: SamplerOutput,
+                               scheduler_outputs: SchedulerOutputs,
+                               ts_start: float) -> List[RequestOutput]:
         # Update the scheduled sequence groups with the model outputs.
         scheduled_seq_groups = scheduler_outputs.scheduled_seq_groups
         for seq_group, outputs in zip(scheduled_seq_groups, output):
@@ -740,7 +739,7 @@ class LLMEngine:
         # Create the outputs.
         request_outputs: List[RequestOutput] = []
         for seq_group in scheduled_seq_groups:
-            seq_group.maybe_set_first_token_time(now)
+            seq_group.maybe_set_first_token_time(time.time())
             request_output = RequestOutput.from_seq_group(seq_group)
             request_outputs.append(request_output)
         for seq_group in scheduler_outputs.ignored_seq_groups:
@@ -755,7 +754,10 @@ class LLMEngine:
 
         # Log stats.
         if self.log_stats:
-            self.stat_logger.log(self._get_stats(scheduler_outputs))
+            ts_end = time.time()
+            self.stat_logger.log(
+                self._get_stats(scheduler_outputs,
+                                1000.0 * (ts_end - ts_start)))
 
         return request_outputs
 
@@ -812,6 +814,7 @@ class LLMEngine:
         """
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
 
+        ts_start = time.time()
         if not scheduler_outputs.is_empty():
             # Execute the model.
             all_outputs = self._run_workers(
@@ -829,7 +832,9 @@ class LLMEngine:
         else:
             output = []
 
-        return self._process_model_outputs(output, scheduler_outputs)
+        return self._process_model_outputs(output,
+                                           scheduler_outputs,
+                                           ts_start=ts_start)
 
     def do_log_stats(self) -> None:
         """Forced log when no requests active."""
@@ -837,7 +842,8 @@ class LLMEngine:
             self.stat_logger.log(self._get_stats(scheduler_outputs=None))
 
     def _get_stats(self,
-                   scheduler_outputs: Optional[SchedulerOutputs]) -> Stats:
+                   scheduler_outputs: Optional[SchedulerOutputs],
+                   delta_time_ms: Optional[float] = None) -> Stats:
         """Get Stats to be Logged to Prometheus."""
         now = time.monotonic()
 
@@ -864,6 +870,7 @@ class LLMEngine:
         time_to_first_tokens = []
         time_per_output_tokens = []
         time_e2e_requests = []
+        generation_time_ms, prompt_time_ms = None, None
         if scheduler_outputs is not None:
             prompt_run = scheduler_outputs.prompt_run
 
@@ -872,8 +879,10 @@ class LLMEngine:
                 num_prompt_tokens = sum(
                     len(seq_group.prompt_token_ids)
                     for seq_group in scheduler_outputs.scheduled_seq_groups)
+                prompt_time_ms = delta_time_ms
             else:
                 num_generation_tokens = scheduler_outputs.num_batched_tokens
+                generation_time_ms = delta_time_ms
 
             # Latency Timings.
             time_last_iters = []
@@ -900,7 +909,10 @@ class LLMEngine:
             time_to_first_tokens=time_to_first_tokens,
             time_per_output_tokens=time_per_output_tokens,
             time_e2e_requests=time_e2e_requests,
+            prompt_time_ms=prompt_time_ms,
+            generation_time_ms=generation_time_ms
         )
+
 
     def _decode_sequence(self, seq: Sequence, prms: SamplingParams) -> None:
         """Decodes the new token for a sequence."""

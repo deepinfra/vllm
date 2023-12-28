@@ -3,7 +3,7 @@ from aioprometheus import Counter, Gauge, Histogram
 
 import time
 import numpy as np
-from typing import List
+from typing import List, Optional
 from dataclasses import dataclass
 
 logger = init_logger(__name__)
@@ -61,7 +61,21 @@ histogram_e2e_request_latency = Histogram(
     "vllm:e2e_request_latency_seconds",
     "Histogram of end to end request latency in seconds.",
     buckets=[1.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0])
-# end-metrics-definitions
+
+
+histogram_generation_latency = Histogram(
+    "vllm:generation_latency_seconds",
+    "Histogram of generation latency in seconds for a batch.",
+    buckets=[
+        0.001, 0.010, 0.020, 0.030, 0.050, 0.075, 0.1, 0.15, 0.25, 0.5, 1.0, 2.5
+    ])
+
+histogram_prompt_latency = Histogram(
+    "vllm:prompt_latency_seconds",
+    "Histogram of prompt run latency in seconds for a batch.",
+    buckets=[
+        0.001, 0.010, 0.020, 0.030, 0.050, 0.075, 0.1, 0.15, 0.25, 0.5, 1.0, 2.5
+    ])
 
 
 @dataclass
@@ -82,6 +96,9 @@ class Stats:
     time_to_first_tokens: List[float]
     time_per_output_tokens: List[float]
     time_e2e_requests: List[float]
+
+    generation_time_ms: Optional[int]
+    prompt_time_ms: Optional[int]
 
 
 class StatLogger:
@@ -122,6 +139,13 @@ class StatLogger:
             histogram_time_per_output_tokens.observe(labels, tpot)
         for e2e in stats.time_e2e_requests:
             histogram_e2e_request_latency.observe(labels, e2e)
+
+        if stats.generation_time_ms is not None:
+            histogram_generation_latency.observe(
+                labels, stats.generation_time_ms / 1000)
+        if stats.prompt_time_ms is not None:
+            histogram_prompt_latency.observe(
+                labels, stats.prompt_time_ms / 1000)
 
     def _log_prometheus_interval(self, prompt_throughput: float,
                                  generation_throughput: float) -> None:
