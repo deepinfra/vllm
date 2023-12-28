@@ -3,7 +3,7 @@ from prometheus_client import Counter, Gauge, Histogram, Info, REGISTRY, disable
 
 import time
 import numpy as np
-from typing import Dict, List
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 logger = init_logger(__name__)
@@ -92,8 +92,20 @@ class Metrics:
             documentation="Average generation throughput in tokens/s.",
             labelnames=labelnames,
         )
-
-
+        self.histogram_generation_latency = Histogram(
+            "vllm:generation_latency_seconds",
+            "Histogram of generation latency in seconds for a batch.",
+            labelnames=labelnames,
+            buckets=[
+                0.001, 0.010, 0.020, 0.030, 0.050, 0.075, 0.1, 0.15, 0.25, 0.5, 1.0, 2.5
+            ])
+        self.histogram_prompt_latency = Histogram(
+            "vllm:prompt_latency_seconds",
+            "Histogram of prompt run latency in seconds for a batch.",
+            labelnames=labelnames,
+            buckets=[
+                0.001, 0.010, 0.020, 0.030, 0.050, 0.075, 0.1, 0.15, 0.25, 0.5, 1.0, 2.5
+            ])
 # end-metrics-definitions
 
 
@@ -115,6 +127,9 @@ class Stats:
     time_to_first_tokens: List[float]
     time_per_output_tokens: List[float]
     time_e2e_requests: List[float]
+
+    generation_time_ms: Optional[int]
+    prompt_time_ms: Optional[int]
 
 
 class StatLogger:
@@ -173,6 +188,13 @@ class StatLogger:
         for e2e in stats.time_e2e_requests:
             self.metrics.histogram_e2e_request_latency.labels(
                 **self.labels).observe(e2e)
+
+        if stats.generation_time_ms is not None:
+            self.metrics.histogram_generation_latency.labels(**self.labels).observe(
+                stats.generation_time_ms / 1000)
+        if stats.prompt_time_ms is not None:
+            self.metrics.histogram_prompt_latency.labels(**self.labels).observe(
+                stats.prompt_time_ms / 1000)
 
     def _log_prometheus_interval(self, prompt_throughput: float,
                                  generation_throughput: float) -> None:

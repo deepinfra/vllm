@@ -19,6 +19,7 @@ import vllm
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.entrypoints.openai.protocol import CompletionRequest, ChatCompletionRequest, ErrorResponse
+
 from vllm.logger import init_logger
 from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
@@ -183,6 +184,7 @@ async def create_chat_completion(request: ChatCompletionRequest,
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
+
     if request.stream:
         return StreamingResponse(content=generator,
                                  media_type="text/event-stream")
@@ -197,6 +199,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
+
     if request.stream:
         return StreamingResponse(content=generator,
                                  media_type="text/event-stream")
