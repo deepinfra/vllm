@@ -1,4 +1,7 @@
 import asyncio
+import json
+import faulthandler
+import signal
 import importlib
 import inspect
 import re
@@ -170,6 +173,10 @@ def build_app(args: Namespace) -> FastAPI:
     app.root_path = args.root_path
 
     mount_metrics(app)
+
+    faulthandler.enable(all_threads=True)
+    if hasattr(signal, 'SIGUSR1'):
+        faulthandler.register(signal.SIGUSR1)
 
     app.add_middleware(
         CORSMiddleware,
