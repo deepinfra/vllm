@@ -12,6 +12,7 @@ from vllm.entrypoints.openai.protocol import (
     UsageInfo)
 from vllm.outputs import RequestOutput
 from vllm.entrypoints.openai.serving_engine import OpenAIServing
+from vllm.engine.metrics import record_counter_metrics
 
 logger = init_logger(__name__)
 
@@ -69,6 +70,9 @@ class OpenAIServingChat(OpenAIServing):
 
         result_generator = self.engine.generate(prompt, sampling_params,
                                                 request_id, token_ids)
+
+        record_counter_metrics(1, usage.prompt_tokens, usage.completion_tokens)
+
         # Streaming response
         if request.stream:
             return self.chat_completion_stream_generator(
@@ -166,6 +170,8 @@ class OpenAIServingChat(OpenAIServing):
                         completion_tokens=previous_num_tokens[i],
                         total_tokens=prompt_tokens + previous_num_tokens[i],
                     )
+                    record_counter_metrics(1 if i == 0 else 0, prompt_tokens,
+                                           previous_num_tokens[i])
                     choice_data = ChatCompletionResponseStreamChoice(
                         index=i,
                         delta=DeltaMessage(content=delta_text),
@@ -232,6 +238,8 @@ class OpenAIServingChat(OpenAIServing):
             completion_tokens=num_generated_tokens,
             total_tokens=num_prompt_tokens + num_generated_tokens,
         )
+        record_counter_metrics(1, usage.prompt_tokens, usage.completion_tokens)
+
         response = ChatCompletionResponse(
             id=request_id,
             created=created_time,

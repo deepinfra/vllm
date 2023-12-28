@@ -15,6 +15,8 @@ from .protocol import (
 )
 from vllm.outputs import RequestOutput
 from vllm.entrypoints.openai.serving_engine import OpenAIServing
+from vllm.engine.metrics import record_counter_metrics
+
 
 logger = init_logger(__name__)
 
@@ -86,6 +88,9 @@ async def completion_stream_generator(
                     completion_tokens=completion_tokens,
                     total_tokens=prompt_tokens + completion_tokens,
                 )
+                record_counter_metrics(1,
+                                       final_usage.prompt_tokens,
+                                       final_usage.completion_tokens)
                 response_json = CompletionStreamResponse(
                     id=request_id,
                     created=created_time,
@@ -100,6 +105,7 @@ async def completion_stream_generator(
                     ],
                     usage=final_usage,
                 ).model_dump_json(exclude_unset=True)
+
                 yield f"data: {response_json}\n\n"
 
     yield "data: [DONE]\n\n"
@@ -179,6 +185,7 @@ def request_output_to_completion_response(final_res: RequestOutput, request,
         completion_tokens=num_generated_tokens,
         total_tokens=num_prompt_tokens + num_generated_tokens,
     )
+    record_counter_metrics(1, usage.prompt_tokens, usage.completion_tokens)
 
     return CompletionResponse(
         id=request_id,
