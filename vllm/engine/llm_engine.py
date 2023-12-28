@@ -438,7 +438,6 @@ class LLMEngine:
         
         Returns RequestOutputs that can be returned to the client.
         """
-
         now = time.time()
 
         # Organize outputs by [sequence group][step] instead of
@@ -470,6 +469,7 @@ class LLMEngine:
         for seq_group in ignored_seq_groups:
             request_output = RequestOutput.from_seq_group(seq_group)
             request_outputs.append(request_output)
+
         return request_outputs
 
     def step(self) -> List[RequestOutput]:
@@ -525,6 +525,7 @@ class LLMEngine:
         """
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
 
+        ts_start = time.time()
         if not scheduler_outputs.is_empty():
             output = self.model_executor.execute_model(
                 seq_group_metadata_list=seq_group_metadata_list,
@@ -541,7 +542,8 @@ class LLMEngine:
 
         # Log stats.
         if self.log_stats:
-            self.stat_logger.log(self._get_stats(scheduler_outputs))
+            ts_end = time.time()
+            self.stat_logger.log(self._get_stats(scheduler_outputs), 1000.0 * (ts_end - ts_start))
 
         return request_outputs
 
@@ -551,7 +553,8 @@ class LLMEngine:
             self.stat_logger.log(self._get_stats(scheduler_outputs=None))
 
     def _get_stats(self,
-                   scheduler_outputs: Optional[SchedulerOutputs]) -> Stats:
+                   scheduler_outputs: Optional[SchedulerOutputs],
+                   delta_time_ms: Optional[float] = None) -> Stats:
         """Get Stats to be Logged to Prometheus."""
         now = time.time()
 
@@ -578,6 +581,7 @@ class LLMEngine:
         time_to_first_tokens = []
         time_per_output_tokens = []
         time_e2e_requests = []
+        generation_time_ms, prompt_time_ms = None, None
         if scheduler_outputs is not None:
             prompt_run = scheduler_outputs.num_prefill_groups > 0
 
@@ -591,8 +595,10 @@ class LLMEngine:
                     scheduled_seq_group.seq_group.num_seqs()
                     for scheduled_seq_group in
                     scheduler_outputs.scheduled_seq_groups)
+                prompt_time_ms = delta_time_ms
             else:
                 num_generation_tokens = scheduler_outputs.num_batched_tokens
+                generation_time_ms = delta_time_ms
 
             # Latency Timings.
             time_last_iters = []
@@ -621,6 +627,8 @@ class LLMEngine:
             time_to_first_tokens=time_to_first_tokens,
             time_per_output_tokens=time_per_output_tokens,
             time_e2e_requests=time_e2e_requests,
+            prompt_time_ms=prompt_time_ms,
+            generation_time_ms=generation_time_ms
         )
 
     def add_lora(self, lora_request: LoRARequest) -> bool:

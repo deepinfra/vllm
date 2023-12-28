@@ -94,6 +94,7 @@ async def create_chat_completion(request: ChatCompletionRequest,
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
+
     if request.stream:
         return StreamingResponse(content=generator,
                                  media_type="text/event-stream")
@@ -108,6 +109,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
+
     if request.stream:
         return StreamingResponse(content=generator,
                                  media_type="text/event-stream")
