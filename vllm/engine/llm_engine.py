@@ -29,7 +29,6 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 _LOGGING_INTERVAL_SEC = 5
-_LOGGING_AGGREGATION_SEC = 30
 
 
 class LLMEngine:
@@ -627,10 +626,10 @@ class LLMEngine:
 
         # Discard the old stats.
         self.num_prompt_tokens = [(t, n) for t, n in self.num_prompt_tokens
-                                  if now - t < _LOGGING_AGGREGATION_SEC]
+                                  if now - t < _LOGGING_INTERVAL_SEC]
         self.num_generation_tokens = [(t, n)
                                       for t, n in self.num_generation_tokens
-                                      if now - t < _LOGGING_AGGREGATION_SEC]
+                                      if now - t < _LOGGING_INTERVAL_SEC]
 
         if len(self.num_prompt_tokens) > 1:
             total_num_tokens = sum(n for _, n in self.num_prompt_tokens[1:])
@@ -647,23 +646,22 @@ class LLMEngine:
 
         self.generation_times_ms = [(t, n)
                                     for t, n in self.generation_times_ms
-                                    if now - t < _LOGGING_AGGREGATION_SEC]
+                                    if now - t < _LOGGING_INTERVAL_SEC]
         self.prompt_times_ms = [(t, n)
                                 for t, n in self.prompt_times_ms
-                                if now - t < _LOGGING_AGGREGATION_SEC]
+                                if now - t < _LOGGING_INTERVAL_SEC]
         if len(self.generation_times_ms) > 1:
-            total_generation_time_ms = sum(n for _, n in self.generation_times_ms[1:])
-            window = now - self.generation_times_ms[0][0]
-            avg_generation_time_ms = total_generation_time_ms / window
-            max_generation_time_ms = max(n for _, n in self.generation_times_ms[1:])
+            total_generation_time_ms = sum(n for _, n in self.generation_times_ms)
+            avg_generation_time_ms = total_generation_time_ms / len(self.generation_times_ms)
+            max_generation_time_ms = max(n for _, n in self.generation_times_ms)
         else:
             avg_generation_time_ms = 0.0
             max_generation_time_ms = 0.0
+
         if len(self.prompt_times_ms) > 1:
-            total_prompt_time_ms = sum(n for _, n in self.prompt_times_ms[1:])
-            window = now - self.prompt_times_ms[0][0]
-            avg_prompt_time_ms = total_prompt_time_ms / window
-            max_prompt_time_ms = max(n for _, n in self.prompt_times_ms[1:])
+            total_prompt_time_ms = sum(n for _, n in self.prompt_times_ms)
+            avg_prompt_time_ms = total_prompt_time_ms / len(self.prompt_times_ms)
+            max_prompt_time_ms = max(n for _, n in self.prompt_times_ms)
         else:
             avg_prompt_time_ms = 0.0
             max_prompt_time_ms = 0.0
@@ -703,7 +701,7 @@ class LLMEngine:
                     f"{avg_generation_throughput:.1f} tokens/s, "
                     "Max iteration time: "
                     f"{max_generation_time_ms:.1f} ms, "
-                    "Avg: "
+                    "Avg time/tok:"
                     f"{avg_generation_time_ms:.1f} ms, "
                     f"Running: {len(self.scheduler.running)} reqs, "
                     f"Swapped: {len(self.scheduler.swapped)} reqs, "
