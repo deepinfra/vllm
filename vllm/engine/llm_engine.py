@@ -768,22 +768,24 @@ class LLMEngine:
                                            ts_start=ts_start)
 
     def do_log_stats(self) -> None:
-        self._log_system_stats(False, 0)
+        self._log_system_stats(False, 0, None)
 
     def _log_system_stats(
         self,
         prompt_run: bool,
         num_batched_tokens: int,
-        delta_time_ms: float,
+        delta_time_ms: float | None,
     ) -> None:
         now = time.monotonic()
         # Log the number of batched input tokens.
         if prompt_run:
             self.num_prompt_tokens.append((now, num_batched_tokens))
-            self.prompt_times_ms.append((now, delta_time_ms))
+            if delta_time_ms:
+                self.prompt_times_ms.append((now, delta_time_ms))
         else:
             self.num_generation_tokens.append((now, num_batched_tokens))
-            self.generation_times_ms.append((now, delta_time_ms))
+            if delta_time_ms:
+                self.generation_times_ms.append((now, delta_time_ms))
 
         should_log = now - self.last_logging_time >= _LOGGING_INTERVAL_SEC
         if not should_log:
