@@ -90,6 +90,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY --from=build /workspace/vllm/*.so /workspace/vllm/
 COPY vllm vllm
+COPY benchmarks benchmarks
+COPY tests tests
 
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 #################### OPENAI API SERVER ####################
