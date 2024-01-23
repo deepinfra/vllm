@@ -71,8 +71,6 @@ class OpenAIServingChat(OpenAIServing):
         result_generator = self.engine.generate(prompt, sampling_params,
                                                 request_id, token_ids)
 
-        record_counter_metrics(1, usage.prompt_tokens, usage.completion_tokens)
-
         # Streaming response
         if request.stream:
             return self.chat_completion_stream_generator(
