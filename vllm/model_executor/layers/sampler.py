@@ -395,8 +395,13 @@ def _sample(
                 if is_prompt:
                     _, sampling_params = seq_group
                     max_best_of = max(max_best_of, sampling_params.best_of)
-            multinomial_samples = _multinomial(probs[sample_indices],
-                                               max_best_of)
+            multinomial_samples = torch.multinomial(
+                probs[sample_indices],
+                max_best_of,
+                replacement=True
+            )
+            # multinomial_samples = _multinomial(probs[sample_indices],
+            #                                    max_best_of)
         elif sampling_type == SamplingType.BEAM:
             beam_search_logprobs = logprobs[sample_indices]
         else:
