@@ -11,6 +11,8 @@ from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.sequence import (PromptLogprobs, SampleLogprobs, SamplerOutput,
                            SequenceData, SequenceGroupOutput, SequenceOutput)
 from vllm.logger import init_logger
+from torch.profiler import profile, record_function, ProfilerActivity
+
 logger = init_logger(__name__)
 
 
@@ -376,7 +378,7 @@ def _sample(
     sample_metadata = {}
 
     #force a GPU<->CPU sync
-    torch.cuda.synchronize()
+    # torch.cuda.synchronize()
 
     # Counterintiutively, having two loops here is actually faster.
     # The first loop can run without waiting on GPU<->CPU sync.
@@ -398,6 +400,7 @@ def _sample(
                 if is_prompt:
                     _, sampling_params = seq_group
                     max_best_of = max(max_best_of, sampling_params.best_of)
+            logger.info("probs: %s", probs[sample_indices])
             multinomial_samples = torch.multinomial(
                 probs[sample_indices],
                 max_best_of,
