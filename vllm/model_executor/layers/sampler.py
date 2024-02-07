@@ -10,6 +10,8 @@ from vllm.model_executor.sampling_metadata import SamplingMetadata, SamplingTens
 from vllm.sampling_params import SamplingParams, SamplingType
 from vllm.sequence import (PromptLogprobs, SampleLogprobs, SamplerOutput,
                            SequenceData, SequenceGroupOutput, SequenceOutput)
+from vllm.logger import init_logger
+logger = init_logger(__name__)
 
 
 class Sampler(nn.Module):
@@ -259,8 +261,10 @@ def _random_sample(
     is_prompts: List[bool],
     random_samples: torch.Tensor,
 ) -> List[Tuple[List[int], List[int]]]:
+    logger.info("random_samples: %s", random_samples.shape)
     # Find the maximum best_of value of the prompt phase requests.
     random_samples = random_samples.cpu()
+    logger.info("random_samples: %s in cpu", random_samples.shape)
     sample_idx = 0
     results = []
     for seq_group, is_prompt in zip(selected_seq_groups, is_prompts):
