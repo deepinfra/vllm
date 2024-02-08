@@ -82,8 +82,8 @@ class Worker:
         os.environ["NCCL_DEBUG"] = "TRACE"
         # os.environ["NCCL_CHECK_POINTERS"] = "1"
 
-        # This env var set by Ray causes exceptions with graph building.
-        os.environ.pop("NCCL_ASYNC_ERROR_HANDLING", None)
+        # # This env var set by Ray causes exceptions with graph building.
+        # os.environ.pop("NCCL_ASYNC_ERROR_HANDLING", None)
 
         self.device = torch.device(f"cuda:{self.local_rank}")
         torch.cuda.set_device(self.device)

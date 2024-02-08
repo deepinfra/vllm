@@ -152,8 +152,11 @@ class LLMEngine:
             kv_cache_dtype=self.cache_config.cache_dtype,
             is_driver_worker=True,
         )
+        logger.info("initializing model")
         self._run_workers("init_model")
+        logger.info("loading model")
         self._run_workers("load_model")
+        logger.info("loaded")
 
     def _init_tokenizer(self, **tokenizer_init_kwargs):
         init_kwargs = dict(
