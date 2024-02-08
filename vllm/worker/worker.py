@@ -18,6 +18,9 @@ from vllm.sequence import SamplerOutput, SequenceGroupMetadata
 from vllm.worker.cache_engine import CacheEngine
 from vllm.worker.model_runner import ModelRunner
 from vllm.lora.request import LoRARequest
+from vllm.logger import init_logger
+
+logger = init_logger(__name__)
 
 
 class Worker:
@@ -71,10 +74,16 @@ class Worker:
         # this behavior.
         # Related issue:
         # https://discuss.pytorch.org/t/cuda-allocation-lifetime-for-inputs-to-distributed-all-reduce/191573
+        logger.info("init_model: env: {os.environ}")
         os.environ["TORCH_NCCL_AVOID_RECORD_STREAMS"] = "1"
+
+        # Debug NCCL
+        os.environ["NCCL_DEBUG"] = "INFO"
+        os.environ["NCCL_CHECK_POINTERS"] = "1"
 
         # This env var set by Ray causes exceptions with graph building.
         os.environ.pop("NCCL_ASYNC_ERROR_HANDLING", None)
+
         self.device = torch.device(f"cuda:{self.local_rank}")
         torch.cuda.set_device(self.device)
 
