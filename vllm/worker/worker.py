@@ -74,12 +74,12 @@ class Worker:
         # this behavior.
         # Related issue:
         # https://discuss.pytorch.org/t/cuda-allocation-lifetime-for-inputs-to-distributed-all-reduce/191573
-        logger.info("init_model: env: {os.environ}")
+        logger.info(f"init_model: env: {os.environ}")
         os.environ["TORCH_NCCL_AVOID_RECORD_STREAMS"] = "1"
 
         # Debug NCCL
         os.environ["NCCL_DEBUG"] = "INFO"
-        os.environ["NCCL_CHECK_POINTERS"] = "1"
+        # os.environ["NCCL_CHECK_POINTERS"] = "1"
 
         # This env var set by Ray causes exceptions with graph building.
         os.environ.pop("NCCL_ASYNC_ERROR_HANDLING", None)
@@ -96,6 +96,7 @@ class Worker:
             init_custom_ar()
         # Initialize the model.
         set_random_seed(self.model_config.seed)
+        logger.info("init model done")
 
     def load_model(self):
         self.model_runner.load_model()
