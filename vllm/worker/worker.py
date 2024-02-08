@@ -78,7 +78,8 @@ class Worker:
         os.environ["TORCH_NCCL_AVOID_RECORD_STREAMS"] = "1"
 
         # Debug NCCL
-        os.environ["NCCL_DEBUG"] = "INFO"
+        # os.environ["NCCL_DEBUG"] = "INFO"
+        os.environ["NCCL_DEBUG"] = "TRACE"
         # os.environ["NCCL_CHECK_POINTERS"] = "1"
 
         # This env var set by Ray causes exceptions with graph building.
