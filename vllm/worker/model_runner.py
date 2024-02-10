@@ -772,6 +772,9 @@ class CUDAGraphRunner:
         # Run the graph.
         self.graph.replay()
 
+        # Synchronize to make sure that the graph execution is finished.
+        torch.cuda.synchronize()
+
         # Return the output tensor.
         return self.output_buffers["hidden_states"]
 
