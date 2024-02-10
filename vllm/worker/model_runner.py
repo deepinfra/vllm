@@ -718,17 +718,23 @@ class CUDAGraphRunner:
         # Run the model once without capturing the graph.
         # This is to make sure that the captured graph does not include the
         # kernel launches for initial benchmarking (e.g., Triton autotune).
-        self.model(
-            input_ids,
-            positions,
-            kv_caches,
-            input_metadata,
-        )
+
+        s = torch.cuda.Stream()
+        s.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(s):
+            self.model(
+                input_ids,
+                positions,
+                kv_caches,
+                input_metadata,
+            )
+        torch.cuda.current_stream().wait_stream(s)
+
         torch.cuda.synchronize()
 
         # Capture the graph.
         self.graph = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(self.graph, pool=memory_pool):
+        with torch.cuda.graph(self.graph, pool=memory_pool, stream=s):
             hidden_states = self.model(
                 input_ids,
                 positions,
