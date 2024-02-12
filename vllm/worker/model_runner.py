@@ -531,12 +531,17 @@ class ModelRunner:
             model_executable = self.graph_runners[graph_batch_size]
         else:
             model_executable = self.model
+
+        torch.cuda.synchronize()
+
         hidden_states = model_executable(
             input_ids=input_tokens,
             positions=input_positions,
             kv_caches=kv_caches,
             input_metadata=input_metadata,
         )
+
+        torch.cuda.synchronize()
 
         # Sample the next token.
         output = self.model.sample(
