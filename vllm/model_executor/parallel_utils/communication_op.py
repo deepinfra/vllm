@@ -102,7 +102,7 @@ def broadcast(input_: torch.Tensor,
               src: int = 0,
               group: Optional[ProcessGroup] = None):
     """Broadcast the input tensor."""
-    group = group or torch.distributed.group.WORLD
+    group = group or get_tensor_model_parallel_group()
     ranks = torch.distributed.get_process_group_ranks(group)
     assert src in ranks, f"Invalid src rank ({src})"
 
@@ -119,7 +119,7 @@ def broadcast_object_list(obj_list: List[Any],
                           src: int = 0,
                           group: Optional[ProcessGroup] = None):
     """Broadcast the input object list."""
-    group = group or torch.distributed.group.WORLD
+    group = group or get_tensor_model_parallel_group()
     ranks = torch.distributed.get_process_group_ranks(group)
     assert src in ranks, f"Invalid src rank ({src})"
 
@@ -141,7 +141,7 @@ def broadcast_tensor_dict(
     group: Optional[ProcessGroup] = None,
 ) -> Dict[Any, Union[torch.Tensor, Any]]:
     """Broadcast the input tensor dictionary."""
-    group = group or torch.distributed.group.WORLD
+    group = group or get_tensor_model_parallel_group()
     ranks = torch.distributed.get_process_group_ranks(group)
     assert src in ranks, f"Invalid src rank ({src})"
 
