@@ -221,16 +221,16 @@ class SamplingTensors:
         # Because the memory is pinned, we can do non-blocking
         # transfer to device.
         return cls(
-            temperatures=temperatures_t.to(device=device, non_blocking=True),
-            top_ps=top_ps_t.to(device=device, non_blocking=True),
-            top_ks=top_ks_t.to(device=device, non_blocking=True),
-            min_ps=min_ps_t.to(device=device, non_blocking=True),
+            temperatures=temperatures_t.to(device=device, non_blocking=False),
+            top_ps=top_ps_t.to(device=device, non_blocking=False),
+            top_ks=top_ks_t.to(device=device, non_blocking=False),
+            min_ps=min_ps_t.to(device=device, non_blocking=False),
             presence_penalties=presence_penalties_t.to(device=device,
-                                                       non_blocking=True),
+                                                       non_blocking=False),
             frequency_penalties=frequency_penalties_t.to(device=device,
-                                                         non_blocking=True),
+                                                         non_blocking=False),
             repetition_penalties=repetition_penalties_t.to(device=device,
-                                                           non_blocking=True),
-            prompt_tokens=prompt_tensor.to(device=device, non_blocking=True),
-            output_tokens=output_tensor.to(device=device, non_blocking=True),
+                                                           non_blocking=False),
+            prompt_tokens=prompt_tensor.to(device=device, non_blocking=False),
+            output_tokens=output_tensor.to(device=device, non_blocking=False),
         )
