@@ -1,4 +1,5 @@
 """A GPU worker class."""
+import datetime
 import gc
 import os
 from typing import Dict, List, Tuple, Set, Optional
@@ -250,6 +251,7 @@ def init_distributed_environment(
             world_size=parallel_config.world_size,
             rank=rank,
             init_method=distributed_init_method,
+            timeout=datetime.timedelta(seconds=60)
         )
 
     # A small all_reduce for warmup.
