@@ -12,6 +12,7 @@ from typing_extensions import Annotated, Required, TypedDict
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
+from vllm.model_executor.structure_logits_processors import JSONStructureLogitsProcessor
 
 
 class CustomChatCompletionContentPartParam(TypedDict, total=False):
@@ -99,7 +100,7 @@ class UsageInfo(OpenAIBaseModel):
 
 class ResponseFormat(OpenAIBaseModel):
     # type must be "json_object" or "text"
-    type: Literal["text", "json_object"]
+    type: Literal["text", "json_object"] = "text"
 
 
 class StreamOptions(OpenAIBaseModel):
@@ -246,6 +247,8 @@ class ChatCompletionRequest(OpenAIBaseModel):
                 return logits
 
             logits_processors = [logit_bias_logits_processor]
+        if self.response_format and self.response_format.type == "json_object":
+            logits_processors = (logits_processors or []) + [JSONStructureLogitsProcessor()]
 
         return SamplingParams(
             n=self.n,
@@ -431,6 +434,8 @@ class CompletionRequest(OpenAIBaseModel):
                 return logits
 
             logits_processors = [logit_bias_logits_processor]
+        if self.response_format and self.response_format.type == "json_object":
+            logits_processors = (logits_processors or []) + [JSONStructureLogitsProcessor()]
 
         return SamplingParams(
             n=self.n,

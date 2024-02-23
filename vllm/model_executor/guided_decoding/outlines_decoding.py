@@ -102,9 +102,9 @@ def _get_guide_and_mode(
         return choices_regex, GuidedDecodingMode.CHOICE
     elif request.guided_grammar:
         return request.guided_grammar, GuidedDecodingMode.GRAMMAR
-    elif (request.response_format is not None
-          and request.response_format.type == "json_object"):
-        return JSON_GRAMMAR, GuidedDecodingMode.GRAMMAR
+    #elif (request.response_format is not None
+    #      and request.response_format.type == "json_object"):
+    #    return JSON_GRAMMAR, GuidedDecodingMode.GRAMMAR
     else:
         return None, None
 
