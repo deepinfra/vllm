@@ -44,6 +44,8 @@ from vllm.usage.usage_lib import UsageContext
 from vllm.utils import FlexibleArgumentParser
 from vllm.version import __version__ as VLLM_VERSION
 
+from vllm.model_executor.structure_logits_processors import JSONStructureLogitsProcessor
+
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
 engine: AsyncLLMEngine
@@ -174,6 +176,12 @@ def build_app(args: Namespace) -> FastAPI:
 
     mount_metrics(app)
 
+
+async def _post_init():
+    engine_model_config = await engine.get_model_config()
+    if args.enable_json_mode:
+        JSONStructureLogitsProcessor.init_static(engine_model_config, openai_serving_chat.tokenizer)
+
     faulthandler.enable(all_threads=True)
     if hasattr(signal, 'SIGUSR1'):
         faulthandler.register(signal.SIGUSR1)
@@ -282,6 +290,17 @@ async def init_app(args: Namespace,
         request_logger=request_logger,
         chat_template=args.chat_template,
     )
+    try:
+        event_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        event_loop = None
+
+    if event_loop is not None and event_loop.is_running(
+    ):  # If the current is instanced by Ray Serve, there is already a running event loop
+        event_loop.create_task(_post_init())
+    else:  # When using single vLLM without engine_use_ray
+        asyncio.run(_post_init())
+
     app.root_path = args.root_path
 
     return app

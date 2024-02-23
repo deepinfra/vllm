@@ -29,6 +29,7 @@ from vllm.lora.request import LoRARequest
 from vllm.pooling_params import PoolingParams
 from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
+from vllm.model_executor.structure_logits_processors import JSONStructureLogitsProcessor
 from vllm.sequence import Logprob
 
 logger = init_logger(__name__)

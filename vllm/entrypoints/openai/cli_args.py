@@ -134,6 +134,10 @@ def make_arg_parser(parser: FlexibleArgumentParser) -> FlexibleArgumentParser:
         help="When --max-logprobs is specified, represents single tokens as"
         "strings of the form 'token_id:{token_id}' so that tokens that"
         "are not JSON-encodable can be identified.")
+    parser.add_argument(
+        "--enable-json-mode",
+        action="store_true",
+        help="Enables JSON mode by passing response_format=\{\"type\":\"json_object\"\}")
 
     parser = AsyncEngineArgs.add_cli_args(parser)
 
