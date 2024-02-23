@@ -3,10 +3,12 @@
 import time
 from typing import Dict, List, Literal, Optional, Union
 
+from enum import Enum
 from pydantic import BaseModel, Field
 
 from vllm.utils import random_uuid
 from vllm.sampling_params import SamplingParams
+from vllm.model_executor.structure_logits_processors import JSONStructureLogitsProcessor
 
 
 class ErrorResponse(BaseModel):
@@ -53,6 +55,14 @@ class UsageInfo(BaseModel):
     completion_tokens: Optional[int] = 0
 
 
+class ResponseFormatTypeEnum(str, Enum):
+    json = "json"
+
+
+class ResponseFormat(BaseModel):
+    type: ResponseFormatTypeEnum
+
+
 class ChatCompletionRequest(BaseModel):
     model: str
     messages: Union[str, List[Dict[str, str]]]
@@ -80,6 +90,7 @@ class ChatCompletionRequest(BaseModel):
     min_p: Optional[float] = 0.0
     include_stop_str_in_output: Optional[bool] = False
     length_penalty: Optional[float] = 1.0
+    response_format: Optional[ResponseFormat] = None
 
     def to_sampling_params(self) -> SamplingParams:
         return SamplingParams(
@@ -101,6 +112,7 @@ class ChatCompletionRequest(BaseModel):
             spaces_between_special_tokens=self.spaces_between_special_tokens,
             include_stop_str_in_output=self.include_stop_str_in_output,
             length_penalty=self.length_penalty,
+            logits_processors=[JSONStructureLogitsProcessor()] if self.response_format and self.response_format.type == "json" else [],
         )
 
 
@@ -133,6 +145,7 @@ class CompletionRequest(BaseModel):
     min_p: Optional[float] = 0.0
     include_stop_str_in_output: Optional[bool] = False
     length_penalty: Optional[float] = 1.0
+    response_format: Optional[ResponseFormat] = None
 
     def to_sampling_params(self):
         echo_without_generation = self.echo and self.max_tokens == 0
@@ -158,6 +171,7 @@ class CompletionRequest(BaseModel):
             spaces_between_special_tokens=(self.spaces_between_special_tokens),
             include_stop_str_in_output=self.include_stop_str_in_output,
             length_penalty=self.length_penalty,
+            logits_processors=[JSONStructureLogitsProcessor()] if self.response_format and self.response_format.type == "json" else [],
         )
 
 

@@ -24,6 +24,8 @@ from vllm.logger import init_logger
 from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 
+from vllm.model_executor.structure_logits_processors import JSONStructureLogitsProcessor
+
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
 openai_serving_chat: OpenAIServingChat = None
@@ -215,6 +217,9 @@ if __name__ == "__main__":
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = AsyncLLMEngine.from_engine_args(engine_args)
+
+    JSONStructureLogitsProcessor.init_static(engine)  # Calculates in the background, takes about 10 seconds on a Mac.
+
     openai_serving_chat = OpenAIServingChat(engine, served_model,
                                             args.response_role,
                                             args.chat_template)
