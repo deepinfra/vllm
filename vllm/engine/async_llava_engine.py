@@ -30,23 +30,29 @@ class _AsyncLLaVAEngine(LLaVAEngine, _AsyncLLMEngine):
         future when we merge the execute_llava_model function to the 
         execute_model.
         """
-        seq_group_metadata_list, scheduler_outputs, ignored = self.scheduler.schedule()
-        if scheduler_outputs.is_empty():
-            return ignored
+        seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
 
-        # Execute the model.
-        output = await self._run_workers_async(
-            "execute_model",
-            seq_group_metadata_list=seq_group_metadata_list,
-            blocks_to_swap_in=scheduler_outputs.blocks_to_swap_in,
-            blocks_to_swap_out=scheduler_outputs.blocks_to_swap_out,
-            blocks_to_copy=scheduler_outputs.blocks_to_copy,
-            runner_method="execute_llava_model",
-        )
+        ts_start = time.time()
+        if not scheduler_outputs.is_empty():
+            # Execute the model.
+            all_outputs = await self._run_workers_async(
+                "execute_model",
+                driver_kwargs={
+                    "seq_group_metadata_list": seq_group_metadata_list,
+                    "blocks_to_swap_in": scheduler_outputs.blocks_to_swap_in,
+                    "blocks_to_swap_out": scheduler_outputs.blocks_to_swap_out,
+                    "blocks_to_copy": scheduler_outputs.blocks_to_copy,
+                    "runner_method": "execute_llava_model",
+                })
 
-        output = output[0] if len(output) >= 1 else output
+            # Only the driver worker returns the sampling results.
+            output = all_outputs[0]
+        else:
+            output = []
 
-        return self._process_model_outputs(output, scheduler_outputs)
+        return self._process_model_outputs(output,
+                                           scheduler_outputs,
+                                           ts_start=ts_start)
 
     async def add_request_async(
             self,

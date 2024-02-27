@@ -602,7 +602,6 @@ class ModelRunner:
         self,
         seq_group_metadata_list: List[SequenceGroupMetadata],
         kv_caches: List[Tuple[torch.Tensor, torch.Tensor]],
-        cache_events: Optional[List[torch.cuda.Event]] = None,
     ) -> SamplerOutput:
         # NOTE: We assume that all sequences in the group are all prompts or
         # all decodes.
