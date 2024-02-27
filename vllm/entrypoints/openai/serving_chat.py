@@ -82,23 +82,24 @@ class OpenAIServingChat(OpenAIServing):
                     if message["role"] == "user":
                         prompt += chat_config.get("user_prefix",
                                                   "USER:\n")  # "USER:\n"
-                        for content in message["content"]:
-                            if content["type"] == "text":
-                                prompt += f"{content['text']}\n"
-                            if content["type"] == "image_url":
-                                # read the image
-                                url = content["image_url"]["url"]
-                                image = self.read_image(url)
-                                images.append(image)
-                                prompt += chat_config.get(
-                                    "image_token", "<image>\n")
+                        if isinstance(message["content"], str):
+                            prompt += f"{message['content']}\n"
+                        else:
+                            for content in message["content"]:
+                                if content["type"] == "text":
+                                    prompt += f"{content['text']}\n"
+                                if content["type"] == "image_url":
+                                    # read the image
+                                    url = content["image_url"]["url"]
+                                    image = self.read_image(url)
+                                    images.append(image)
+                                    prompt += chat_config.get(
+                                        "image_token", "<image>\n")
                     if message["role"] == "assistant":
                         prompt += chat_config.get(
                             "assistant_prefix",
-                            "ASSISTANT:\n")  # "ASSISTANT:\n"
-                        for content in message["content"]:
-                            if content["type"] == "text":
-                                prompt += f"{content['text']}\n"
+                            "ASSISTANT:\n")
+                        prompt += f"{message['content']}\n"
 
                 prompt += chat_config.get("assistant_prefix", "ASSISTANT:\n")
             else:
