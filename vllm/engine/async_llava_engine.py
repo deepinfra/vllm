@@ -30,7 +30,7 @@ class _AsyncLLaVAEngine(LLaVAEngine, _AsyncLLMEngine):
         future when we merge the execute_llava_model function to the 
         execute_model.
         """
-        seq_group_metadata_list, scheduler_outputs, ignored = self._schedule()
+        seq_group_metadata_list, scheduler_outputs, ignored = self.scheduler.schedule()
         if scheduler_outputs.is_empty():
             return ignored
 
