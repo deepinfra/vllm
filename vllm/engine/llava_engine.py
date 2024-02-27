@@ -73,7 +73,7 @@ class LLaVAEngine(LLMEngine):
                                             'execute_model_method')
         else:
             execute_model_method = getattr(worker, 'execute_model_method')
-        outputs = execute_model_method('prepare_promt', prompt_token_ids,
+        outputs = execute_model_method('prepare_prompt', prompt_token_ids,
                                         pixel_values)
         if self.parallel_config.worker_use_ray:
             outputs = ray.get(outputs)

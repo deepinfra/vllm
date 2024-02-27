@@ -74,7 +74,7 @@ class LlavaForConditionalGeneration(nn.Module):
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()
 
-    def prepare_promt(self,
+    def prepare_prompt(self,
                       input_ids: List[int],
                       pixel_values: torch.Tensor = None):
         """
