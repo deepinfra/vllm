@@ -70,11 +70,11 @@ class LLaVAEngine(LLMEngine):
         worker = self.driver_worker
         if self.parallel_config.worker_use_ray:
             execute_model_method = partial(worker.execute_method.remote,
-                                            'execute_model_method')
+                                           'execute_model_method')
         else:
             execute_model_method = getattr(worker, 'execute_model_method')
         outputs = execute_model_method('prepare_prompt', prompt_token_ids,
-                                        pixel_values)
+                                       pixel_values)
         if self.parallel_config.worker_use_ray:
             outputs = ray.get(outputs)
         processed_token_ids = outputs
