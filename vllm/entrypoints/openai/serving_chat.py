@@ -101,8 +101,6 @@ class OpenAIServingChat(OpenAIServing):
                                 prompt += f"{content['text']}\n"
 
                 prompt += chat_config.get("assistant_prefix", "ASSISTANT:\n")
-
-                print("PROMPT "*5, prompt)
             else:
                 prompt = self.tokenizer.apply_chat_template(
                     conversation=request.messages,
