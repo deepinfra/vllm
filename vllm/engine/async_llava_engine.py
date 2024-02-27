@@ -6,6 +6,7 @@ from typing import (List, Optional, Type, AsyncIterator)
 
 from PIL import Image
 from vllm.logger import init_logger
+from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 
@@ -54,12 +55,14 @@ class _AsyncLLaVAEngine(LLaVAEngine, _AsyncLLMEngine):
             sampling_params: SamplingParams,
             prompt_token_ids: Optional[List[int]] = None,
             arrival_time: Optional[float] = None,
-            images: Optional[List[Image.Image]] = None) -> AsyncStream:
+            lora_request: Optional[LoRARequest] = None,
+            images: Optional[List[Image.Image]] = None) -> None:
         return self.add_request(request_id,
                                 prompt,
                                 sampling_params,
                                 prompt_token_ids=prompt_token_ids,
                                 arrival_time=arrival_time,
+                                lora_request=lora_request,
                                 images=images)
 
 
@@ -74,6 +77,7 @@ class AsyncLLaVAEngine(AsyncLLMEngine):
             sampling_params: SamplingParams,
             prompt_token_ids: Optional[List[int]] = None,
             arrival_time: Optional[float] = None,
+            lora_request: Optional[LoRARequest] = None,
             images: Optional[List[Image.Image]] = None) -> AsyncStream:
         if self.log_requests:
             shortened_prompt = prompt
@@ -106,6 +110,7 @@ class AsyncLLaVAEngine(AsyncLLMEngine):
             sampling_params=sampling_params,
             prompt_token_ids=prompt_token_ids,
             arrival_time=arrival_time,
+            lora_request=lora_request,
             images=images)
 
         return stream
@@ -116,6 +121,7 @@ class AsyncLLaVAEngine(AsyncLLMEngine):
         sampling_params: SamplingParams,
         request_id: str,
         prompt_token_ids: Optional[List[int]] = None,
+        lora_request: Optional[LoRARequest] = None,
         images: Optional[List[Image.Image]] = None,
         *args,
         **kwargs,
@@ -133,6 +139,7 @@ class AsyncLLaVAEngine(AsyncLLMEngine):
             request_id: The unique id of the request.
             prompt_token_ids: The token IDs of the prompt. If None, we
                 use the tokenizer to convert the prompts to token IDs.
+            lora_request: LoRA request to use for generation, if any.
             images: A list of PIL images for the prompt. It supports multiple
                 images, although most llava models are trained with only one image.
 
@@ -150,6 +157,7 @@ class AsyncLLaVAEngine(AsyncLLMEngine):
                                             sampling_params,
                                             prompt_token_ids=prompt_token_ids,
                                             arrival_time=arrival_time,
+                                            lora_request=lora_request,
                                             images=images)
 
             async for request_output in stream:

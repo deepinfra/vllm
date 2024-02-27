@@ -5,6 +5,7 @@ from functools import partial
 from typing import List, Optional
 
 from vllm.engine.ray_utils import ray
+from vllm.lora.request import LoRARequest
 from vllm.outputs import RequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import (Sequence, SequenceGroup)
@@ -25,6 +26,7 @@ class LLaVAEngine(LLMEngine):
         sampling_params: SamplingParams,
         prompt_token_ids: Optional[List[int]] = None,
         arrival_time: Optional[float] = None,
+        lora_request: Optional[LoRARequest] = None,
         images: Optional[List[Image.Image]] = None,
     ) -> None:
         """Add a request to the engine's request pool.
