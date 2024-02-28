@@ -102,6 +102,8 @@ class OpenAIServingChat(OpenAIServing):
                         prompt += f"{message['content']}\n"
 
                 prompt += chat_config.get("assistant_prefix", "ASSISTANT:\n")
+                assert prompt.count(chat_config.get("image_token", "<image>\n")) == len(images), \
+                    "Number of images and image tokens should be same"
             else:
                 prompt = self.tokenizer.apply_chat_template(
                     conversation=request.messages,
