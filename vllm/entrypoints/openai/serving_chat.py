@@ -45,13 +45,14 @@ class OpenAIServingChat(OpenAIServing):
             return await self.download_image(request_id, session, url)
         else:
             data = url.split(",")[1] if url.startswith("data:") else url
+            if len(data) > 20 * 1024 * 1024:  # Check if size exceeds 20MB
+                raise ValueError(f"Base64 encoded image data exceeds 20MB")
             try:
                 image_data = base64.b64decode(data)
                 image = Image.open(io.BytesIO(image_data))
                 return image
             except Exception as e:
-                logger.error(f"Error decoding base64 image data: {e} [request_id={request_id}]")
-                return None
+                raise ValueError(f"Error decoding base64 image data")
 
     async def download_image(self, request_id, session, url):
         for attempt in range(3):
@@ -60,29 +61,28 @@ class OpenAIServingChat(OpenAIServing):
                     if response.status == 200:
                         content_type = response.headers.get('Content-Type')
                         content_length = response.headers.get('Content-Length')
-                        if content_type in ['image/jpeg', 'image/png', 'image/webp'] and content_length and int(content_length) < 20 * 1024 * 1024:
-                            image_data = await response.read()
-                            try:
-                                image = Image.open(io.BytesIO(image_data))
-                                logger.info(f"Image downloaded successfully [request_id={request_id}]")
-                                return image
-                            except (IOError, SyntaxError) as e:
-                                logger.error(f"Error opening image: {e} [request_id={request_id}]")
-                                break  # Don't retry if there's an error opening the image
-                        else:
-                            logger.warning(f"Skipped image download, invalid content type or size [request_id={request_id}]")
-                            break # Don't retry if the content type is invalid or the size is too large
+
+                        if content_type not in ['image/jpeg', 'image/png', 'image/webp']:
+                            raise ValueError(f"Image must be of type: jpeg, png, or webp")
+
+                        if content_length and int(content_length) > 20 * 1024 * 1024:
+                            raise ValueError(f"Image must be less than 20MB")
+
+                        image_data = await response.read()
+                        try:
+                            image = Image.open(io.BytesIO(image_data))
+                            return image
+                        except (IOError, SyntaxError) as e:
+                            raise ValueError(f"Error when opening the downloaded image")
                     else:
-                        logger.warning(f"Failed to download image, status code: {response.status} [request_id={request_id}]")
-                        break  # Don't retry for non-200 status codes
+                        raise ValueError(f"Failed to download image, status code: {response.status}")
             except aiohttp.ClientError as e:
                 logger.error(f"Failed to download image, error: {e} [request_id={request_id}]")
             except asyncio.TimeoutError:
                 logger.warning(f"Timeout downloading image [request_id={request_id}]")
             logger.info(f"Retry {attempt+1} [request_id={request_id}]")
             await asyncio.sleep(1)  # Wait for a moment before retrying
-        logger.error(f"Failed to download image after retries [request_id={request_id}]")
-        return None
+        raise ValueError(f"Failed to download image")
 
     async def fetch_images(self, request_id, urls):
         async with aiohttp.ClientSession() as session:
@@ -146,8 +146,6 @@ class OpenAIServingChat(OpenAIServing):
                 assert prompt.count(chat_config.get("image_token", "<image>\n")) == len(image_urls), \
                     "Number of images and image tokens should be same"
                 images = await self.fetch_images(request_id, image_urls)
-                assert len([x for x in images if x]) == len(image_urls), \
-                    "Number of images fetched should be same as number of image urls"
             else:
                 prompt = self.tokenizer.apply_chat_template(
                     conversation=request.messages,
