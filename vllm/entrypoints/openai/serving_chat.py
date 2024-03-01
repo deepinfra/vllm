@@ -1,4 +1,8 @@
+import asyncio
+import io
 import time
+
+import aiohttp
 import requests
 import codecs
 from fastapi import Request
@@ -14,6 +18,10 @@ from vllm.entrypoints.openai.protocol import (
     UsageInfo)
 from vllm.outputs import RequestOutput
 from vllm.entrypoints.openai.serving_engine import OpenAIServing, LoRA
+from io import BytesIO
+from PIL import Image
+import base64
+
 
 logger = init_logger(__name__)
 
@@ -34,22 +42,54 @@ class OpenAIServingChat(OpenAIServing):
         self._load_chat_template(chat_template)
         self.model_type = model_type
 
-    def read_image(self, image=None):
-        from io import BytesIO
-        from PIL import Image
-        import base64
-
-        if isinstance(image, str):
-
-            if image.startswith("http"):
-                return (Image.open(requests.get(image, stream=True).raw))
-            elif image.startswith("data:"):
-                return (Image.open(BytesIO(base64.b64decode(image.split(",")[1]))))
-            else:
-                return (Image.open(BytesIO(base64.b64decode(image))))
+    async def read_image(self, request_id, session, url: str):
+        if url.startswith("http"):
+            return await self.download_image(request_id, session, url)
         else:
-            raise ValueError(
-                "image must be str(http url or base64(starting with data:))")
+            data = url.split(",")[1] if url.startswith("data:") else url
+            try:
+                image_data = base64.b64decode(data)
+                image = Image.open(io.BytesIO(image_data))
+                return image
+            except Exception as e:
+                logger.error(f"Error decoding base64 image data: {e} [request_id={request_id}]")
+                return None
+
+    async def download_image(self, request_id, session, url):
+        for attempt in range(3):
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=60, connect=10)) as response:
+                    if response.status == 200:
+                        content_type = response.headers.get('Content-Type')
+                        content_length = response.headers.get('Content-Length')
+                        if content_type in ['image/jpeg', 'image/png', 'image/webp'] and content_length and int(content_length) < 20 * 1024 * 1024:
+                            image_data = await response.read()
+                            try:
+                                image = Image.open(io.BytesIO(image_data))
+                                logger.info(f"Image downloaded successfully [request_id={request_id}]")
+                                return image
+                            except (IOError, SyntaxError) as e:
+                                logger.error(f"Error opening image: {e} [request_id={request_id}]")
+                                break  # Don't retry if there's an error opening the image
+                        else:
+                            logger.warning(f"Skipped image download, invalid content type or size [request_id={request_id}]")
+                    else:
+                        logger.warning(f"Failed to download image, status code: {response.status} [request_id={request_id}]")
+                        break  # Don't retry for non-200 status codes
+            except aiohttp.ClientError as e:
+                logger.error(f"Failed to download image, error: {e} [request_id={request_id}]")
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout downloading image [request_id={request_id}]")
+            logger.info(f"Retry {attempt+1} [request_id={request_id}]")
+            await asyncio.sleep(1)  # Wait for a moment before retrying
+        logger.error(f"Failed to download image after retries [request_id={request_id}]")
+        return None
+
+    async def fetch_images(self, request_id, urls):
+        async with aiohttp.ClientSession() as session:
+            tasks = [self.read_image(request_id, session, url) for url in urls]
+            return await asyncio.gather(*tasks)
+
 
     async def create_chat_completion(
         self, request: ChatCompletionRequest, raw_request: Request
@@ -73,10 +113,13 @@ class OpenAIServingChat(OpenAIServing):
             return self.create_error_response(
                 "logit_bias is not currently supported")
 
+        request_id = f"cmpl-{random_uuid()}"
+
         chat_config = request.chat_config if request.chat_config else {}
         prompt = ""
+        images = []
         try:
-            images = []
+            image_urls = []
             if self.model_type == "vision":
                 for message in request.messages:
                     if message["role"] == "user":
@@ -91,8 +134,7 @@ class OpenAIServingChat(OpenAIServing):
                                 if content["type"] == "image_url":
                                     # read the image
                                     url = content["image_url"]["url"]
-                                    image = self.read_image(url)
-                                    images.append(image)
+                                    image_urls.append(url)
                                     prompt += chat_config.get(
                                         "image_token", "<image>\n")
                     if message["role"] == "assistant":
@@ -102,8 +144,11 @@ class OpenAIServingChat(OpenAIServing):
                         prompt += f"{message['content']}\n"
 
                 prompt += chat_config.get("assistant_prefix", "ASSISTANT:\n")
-                assert prompt.count(chat_config.get("image_token", "<image>\n")) == len(images), \
+                assert prompt.count(chat_config.get("image_token", "<image>\n")) == len(image_urls), \
                     "Number of images and image tokens should be same"
+                images = await self.fetch_images(request_id, image_urls)
+                assert len([x for x in images if x]) == len(image_urls), \
+                    "Number of images fetched should be same as number of image urls"
             else:
                 prompt = self.tokenizer.apply_chat_template(
                     conversation=request.messages,
@@ -115,7 +160,6 @@ class OpenAIServingChat(OpenAIServing):
                 f"Error in applying chat template from request: {str(e)}")
             return self.create_error_response(str(e))
 
-        request_id = f"cmpl-{random_uuid()}"
 
         try:
             # if not self.model_type == "vision":
