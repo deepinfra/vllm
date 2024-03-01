@@ -603,7 +603,7 @@ def _get_and_verify_max_len(
         max_len_key = getattr(hf_config, key, None)
         if max_len_key is None:
             # try to search inside text_config, maybe it's multimodal model like llava
-            max_len_key = getattr(hf_config, "text_config", {}).get(key, None)
+            max_len_key = getattr(getattr(hf_config, "text_config", {}), key, None)
         if max_len_key is not None:
             derived_max_model_len = min(derived_max_model_len, max_len_key)
     if derived_max_model_len == float("inf"):
