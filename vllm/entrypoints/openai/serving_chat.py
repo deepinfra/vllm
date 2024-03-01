@@ -3,7 +3,6 @@ import io
 import time
 
 import aiohttp
-import requests
 import codecs
 from fastapi import Request
 from typing import AsyncGenerator, AsyncIterator, Optional, List, Union
@@ -18,7 +17,6 @@ from vllm.entrypoints.openai.protocol import (
     UsageInfo)
 from vllm.outputs import RequestOutput
 from vllm.entrypoints.openai.serving_engine import OpenAIServing, LoRA
-from io import BytesIO
 from PIL import Image
 import base64
 
@@ -73,6 +71,7 @@ class OpenAIServingChat(OpenAIServing):
                                 break  # Don't retry if there's an error opening the image
                         else:
                             logger.warning(f"Skipped image download, invalid content type or size [request_id={request_id}]")
+                            break # Don't retry if the content type is invalid or the size is too large
                     else:
                         logger.warning(f"Failed to download image, status code: {response.status} [request_id={request_id}]")
                         break  # Don't retry for non-200 status codes
