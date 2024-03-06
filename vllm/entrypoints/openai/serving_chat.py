@@ -121,6 +121,8 @@ class OpenAIServingChat(OpenAIServing):
             image_urls = []
             if self.model_type == "vision":
                 for message in request.messages:
+                    if message["role"] == "system":
+                        prompt += f"{message['content']}\n\n"
                     if message["role"] == "user":
                         prompt += chat_config.get("user_prefix",
                                                   "USER: ")
