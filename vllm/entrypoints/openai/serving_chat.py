@@ -123,7 +123,7 @@ class OpenAIServingChat(OpenAIServing):
                 for message in request.messages:
                     if message["role"] == "user":
                         prompt += chat_config.get("user_prefix",
-                                                  "USER:\n")  # "USER:\n"
+                                                  "USER: ")
                         if isinstance(message["content"], str):
                             prompt += f"{message['content']}\n"
                         else:
@@ -139,10 +139,10 @@ class OpenAIServingChat(OpenAIServing):
                     if message["role"] == "assistant":
                         prompt += chat_config.get(
                             "assistant_prefix",
-                            "ASSISTANT:\n")
+                            "ASSISTANT: ")
                         prompt += f"{message['content']}\n"
 
-                prompt += chat_config.get("assistant_prefix", "ASSISTANT:\n")
+                prompt += chat_config.get("assistant_prefix", "ASSISTANT:")
                 assert prompt.count(chat_config.get("image_token", "<image>\n")) == len(image_urls), \
                     "Number of images and image tokens should be same"
                 images = await self.fetch_images(request_id, image_urls)
