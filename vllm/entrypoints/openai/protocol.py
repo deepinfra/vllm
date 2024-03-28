@@ -4,7 +4,7 @@ import time
 from typing import Dict, List, Literal, Optional, Union
 
 import torch
-from pydantic import BaseModel, Field, conint, model_validator, field_validator
+from pydantic import BaseModel, Field, conint, model_validator
 
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
@@ -334,17 +334,6 @@ class EmbeddingRequest(BaseModel):
     encoding_format: Optional[str] = Field('float', pattern='^(float|base64)$')
     dimensions: Optional[int] = None
     user: Optional[str] = None
-    max_tokens: Optional[int] = Field(default=1,
-                                      description="max_tokens must be 1")
-
-    @field_validator('max_tokens')
-    def check_max_tokens(cls, v):
-        if v != 1:
-            raise ValueError(
-                "To be consistent with vLLM's implementation of "
-                "generation model, embedding model is reasonably "
-                "treated as a generation model with max_tokens = 1")
-        return v
 
 
 class LogProbs(BaseModel):

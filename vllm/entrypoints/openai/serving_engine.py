@@ -191,6 +191,10 @@ class OpenAIServing:
 
         token_num = len(input_ids)
 
+        # Note: EmbeddingRequest doesn't have max_tokens
+        if isinstance(request, EmbeddingRequest):
+            return input_ids
+
         if request.max_tokens is None:
             request.max_tokens = self.max_model_len - token_num
 
