@@ -7,7 +7,7 @@ from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 from vllm.engine.arg_utils import EngineArgs
 from vllm.engine.llm_engine import LLMEngine
 from vllm.lora.request import LoRARequest
-from vllm.outputs import EmbeddingRequestOutput, RequestOutput
+from vllm.outputs import CompletionRequestOutput, EmbeddingRequestOutput
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import MultiModalData
 from vllm.usage.usage_lib import UsageContext
@@ -133,7 +133,7 @@ class LLM:
         use_tqdm: bool = True,
         lora_request: Optional[LoRARequest] = None,
         multi_modal_data: Optional[MultiModalData] = None,
-    ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
+    ) -> List[Union[CompletionRequestOutput, EmbeddingRequestOutput]]:
         """Generates the completions for the input prompts.
 
         NOTE: This class automatically batches the given prompts, considering
@@ -208,8 +208,8 @@ class LLM:
                                     multi_modal_data=multi_modal_data)
 
     def _run_engine(
-            self, use_tqdm: bool
-    ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
+        self, use_tqdm: bool
+    ) -> List[Union[CompletionRequestOutput, EmbeddingRequestOutput]]:
         # Initialize tqdm.
         if use_tqdm:
             num_requests = self.llm_engine.get_num_unfinished_requests()
@@ -217,7 +217,8 @@ class LLM:
                         desc="Processed prompts",
                         dynamic_ncols=True)
         # Run the engine.
-        outputs: List[Union[RequestOutput, EmbeddingRequestOutput]] = []
+        outputs: List[Union[CompletionRequestOutput,
+                            EmbeddingRequestOutput]] = []
         while self.llm_engine.has_unfinished_requests():
             step_outputs = self.llm_engine.step()
             for output in step_outputs:

@@ -1,6 +1,7 @@
 """Sequence and its related classes."""
 import copy
 import enum
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
@@ -635,8 +636,20 @@ class SequenceOutput:
         return equal and log_probs_equal
 
 
-class SequenceGroupOutput:
-    """The model output associated with a sequence group."""
+class SequenceGroupOutput(ABC):
+    """The base class for model outputs associated with a sequence group."""
+
+    @abstractmethod
+    def __repr__(self) -> str:
+        pass
+
+    @abstractmethod
+    def __eq__(self, other: object) -> bool:
+        pass
+
+
+class CompletionSequenceGroupOutput(SequenceGroupOutput):
+    """The model output associated with a completion sequence group."""
 
     def __init__(
         self,
@@ -647,18 +660,18 @@ class SequenceGroupOutput:
         self.prompt_logprobs = prompt_logprobs
 
     def __repr__(self) -> str:
-        return (f"SequenceGroupOutput(samples={self.samples}, "
+        return (f"CompletionSequenceGroupOutput(samples={self.samples}, "
                 f"prompt_logprobs={self.prompt_logprobs})")
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, SequenceGroupOutput):
+        if not isinstance(other, CompletionSequenceGroupOutput):
             raise NotImplementedError()
         return (self.samples == other.samples
                 and self.prompt_logprobs == other.prompt_logprobs)
 
 
-class EmbeddingSequenceGroupOutput:
-    """The model output associated with a embedding sequence group."""
+class EmbeddingSequenceGroupOutput(SequenceGroupOutput):
+    """The model output associated with an embedding sequence group."""
 
     def __init__(
         self,
@@ -672,8 +685,8 @@ class EmbeddingSequenceGroupOutput:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, EmbeddingSequenceGroupOutput):
-            return NotImplemented
-        return torch.equal(self.embeddings, other.embeddings)
+            raise NotImplementedError()
+        return self.embeddings == other.embeddings
 
 
 @dataclass
@@ -681,11 +694,12 @@ class SamplerOutput:
     """For each sequence group, we generate a list of SequenceOutput object,
     each of which contains one possible candidate for the next token.
 
-    This data structure implements methods so it can be used like a list, but
+    This data structure implements methods, so it can be used like a list, but
     also has optional fields for device tensors.
     """
 
-    outputs: List[Union[SequenceGroupOutput, EmbeddingSequenceGroupOutput]]
+    outputs: List[Union[CompletionSequenceGroupOutput,
+                        EmbeddingSequenceGroupOutput]]
 
     # On-device tensor containing probabilities of each token.
     sampled_token_probs: Optional["torch.Tensor"] = None

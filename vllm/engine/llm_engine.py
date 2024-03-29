@@ -15,12 +15,13 @@ from vllm.executor.executor_base import ExecutorBase
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
 from vllm.model_executor.model_loader import get_architecture_class_name
-from vllm.outputs import (EmbeddingRequestOutput, RequestOutput,
+from vllm.outputs import (CompletionRequestOutput, EmbeddingRequestOutput,
                           RequestOutputFactory)
 from vllm.sampling_params import SamplingParams
 from vllm.sequence import (EmbeddingSequenceGroupOutput, MultiModalData,
                            SamplerOutput, Sequence, SequenceGroup,
-                           SequenceGroupOutput, SequenceOutput, SequenceStatus)
+                           CompletionSequenceGroupOutput, SequenceOutput,
+                           SequenceStatus)
 from vllm.transformers_utils.detokenizer import Detokenizer
 from vllm.transformers_utils.tokenizer_group import (BaseTokenizerGroup,
                                                      get_tokenizer_group)
@@ -431,8 +432,9 @@ class LLMEngine:
 
     def _process_sequence_group_outputs(
         self, seq_group: SequenceGroup,
-        outputs: Union[SequenceGroupOutput,
-                       EmbeddingSequenceGroupOutput]) -> None:
+        outputs: Union[CompletionSequenceGroupOutput,
+                       EmbeddingSequenceGroupOutput]
+    ) -> None:
 
         if self.model_config.embedding_mode:
             seq_group.embeddings = outputs.embeddings
@@ -615,7 +617,7 @@ class LLMEngine:
 
     def _process_model_outputs(
         self, output: SamplerOutput, scheduler_outputs: SchedulerOutputs
-    ) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
+    ) -> List[Union[CompletionRequestOutput, EmbeddingRequestOutput]]:
         now = time.time()
         # Update the scheduled sequence groups with the model outputs.
         scheduled_seq_groups = scheduler_outputs.scheduled_seq_groups
@@ -629,7 +631,7 @@ class LLMEngine:
         self.scheduler.free_finished_seq_groups()
 
         # Create the outputs.
-        request_outputs: List[Union[RequestOutput,
+        request_outputs: List[Union[CompletionRequestOutput,
                                     EmbeddingRequestOutput]] = []
         for scheduled_seq_group in scheduled_seq_groups:
             seq_group = scheduled_seq_group.seq_group
@@ -645,7 +647,9 @@ class LLMEngine:
             self.stat_logger.log(self._get_stats(scheduler_outputs))
         return request_outputs
 
-    def step(self) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
+    def step(
+            self
+    ) -> List[Union[CompletionRequestOutput, EmbeddingRequestOutput]]:
         """Performs one decoding iteration and returns newly generated results.
 
         .. figure:: https://i.imgur.com/sv2HssD.png
