@@ -278,7 +278,7 @@ class RayGPUExecutor(ExecutorBase):
             max_batch_size * self.model_config.max_model_len *
             self.cache_config.gpu_memory_utilization)
         logger.info(f"max_num_batched_tokens: "
-                    f"{self.scheduler_config.max_num_batched_tokens}"
+                    f"{self.scheduler_config.max_num_batched_tokens}, "
                     f"max_batch_size: {max_batch_size}")
 
         # Set it to 1 for computing KV cache in _get_stats
