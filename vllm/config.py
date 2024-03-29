@@ -71,6 +71,8 @@ class ModelConfig:
         max_context_len_to_capture: Maximum context len covered by CUDA graphs.
             When a sequence has context length larger than this, we fall back
             to eager mode.
+        embedding_mode: Whether the running model is for embedding. It should
+            be used for embedding models.
     """
 
     def __init__(
