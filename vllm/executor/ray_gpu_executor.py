@@ -274,11 +274,9 @@ class RayGPUExecutor(ExecutorBase):
             "profile_max_batched_tokens_for_embedding")
 
         max_batch_size = max_batch_sizes[0]
-        # NOTE(changsu): Identifying a margin threshold of 0.8 offers sufficient
-        # leeway to effectively handle memory demands while minimizing the risk
-        # of OOM errors.
-        self.scheduler_config.max_num_batched_tokens = (
-            max_batch_size * self.model_config.max_model_len * 0.8)
+        self.scheduler_config.max_num_batched_tokens = int(
+            max_batch_size * self.model_config.max_model_len *
+            self.cache_config.gpu_memory_utilization)
         logger.info(f"max_num_batched_tokens: "
                     f"{self.scheduler_config.max_num_batched_tokens}"
                     f"max_batch_size: {max_batch_size}")
