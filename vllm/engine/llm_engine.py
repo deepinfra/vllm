@@ -461,6 +461,7 @@ class LLMEngine:
 
         # Create the outputs.
         request_outputs: List[RequestOutput] = []
+        now = time.time()
         for scheduled_seq_group in scheduled_seq_groups:
             seq_group = scheduled_seq_group.seq_group
             seq_group.maybe_set_first_token_time(now)
