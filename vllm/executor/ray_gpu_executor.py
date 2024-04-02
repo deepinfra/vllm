@@ -68,8 +68,6 @@ class RayGPUExecutor(ExecutorBase):
         # Profile the memory usage and initialize the cache.
         if not self.model_config.embedding_mode:
             self._init_cache()
-        else:
-            self._init_embedding()
 
         self.forward_dag = None
         if USE_RAY_COMPILED_DAG:
@@ -260,30 +258,6 @@ class RayGPUExecutor(ExecutorBase):
         # Warm up the model. This includes capturing the model into CUDA graph
         # if enforce_eager is False.
         self._run_workers("warm_up_model")
-
-    def _init_embedding(self):
-        """Initializes the maximum number of tokens can be batched by GPU.
-
-        In embedding mode, there's no need to initialize the cache engine
-        or use CUDA graph optimizations. This method calculates the maximum
-        batch size based on the GPU's capacity to handle tokens for embedding
-        purposes.
-        """
-        # Get the maximum number of tokens that can be allocated on GPU.
-        max_batch_sizes = self._run_workers(
-            "profile_max_batched_tokens_for_embedding")
-
-        max_batch_size = max_batch_sizes[0]
-        self.scheduler_config.max_num_batched_tokens = int(
-            max_batch_size * self.model_config.max_model_len *
-            self.cache_config.gpu_memory_utilization)
-        logger.info(f"max_num_batched_tokens: "
-                    f"{self.scheduler_config.max_num_batched_tokens}, "
-                    f"max_batch_size: {max_batch_size}")
-
-        # Set it to 1 for computing KV cache in _get_stats
-        self.cache_config.num_gpu_blocks = 1
-        self.cache_config.num_cpu_blocks = 1
 
     def execute_model(self,
                       seq_group_metadata_list: List[SequenceGroupMetadata],

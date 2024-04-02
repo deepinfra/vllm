@@ -18,6 +18,7 @@ from vllm.model_executor.parallel_utils.parallel_state import (
     ensure_model_parallel_initialized)
 from vllm.sequence import SamplerOutput, SequenceGroupMetadata
 from vllm.worker.cache_engine import CacheEngine
+from vllm.worker.embedding_model_runner import EmbeddingModelRunner
 from vllm.worker.model_runner import ModelRunner
 
 
@@ -60,7 +61,9 @@ class Worker:
             assert not self.lora_config, (
                 "To be tested: vision language model with LoRA settings.")
 
-        self.model_runner = ModelRunner(
+        ModelRunnerClass = (EmbeddingModelRunner if
+                            self.model_config.embedding_mode else ModelRunner)
+        self.model_runner = ModelRunnerClass(
             model_config,
             parallel_config,
             scheduler_config,
@@ -154,39 +157,6 @@ class Worker:
         gc.collect()
         torch.cuda.empty_cache()
         return num_gpu_blocks, num_cpu_blocks
-
-    @torch.inference_mode()
-    def profile_max_batched_tokens_for_embedding(self) -> int:
-        initial_batch_size = 1  # Start with a safe, small batch size.
-        step_size = 2  # Adjust based on model's sensitivity.
-        max_batch_size = 1  # This will hold the maximum batch size determined.
-        max_model_len = self.scheduler_config.max_model_len
-        out_of_memory = False
-
-        torch.cuda.empty_cache()
-
-        while not out_of_memory:
-            try:
-                # Adjust profile_run to take and use a batch_size argument
-                # for embedding profiling
-                self.model_runner.profile_run(
-                    max_num_batched_tokens=initial_batch_size * max_model_len)
-                # If successful, increment the batch size
-                max_batch_size = initial_batch_size
-                initial_batch_size *= step_size
-            except RuntimeError as e:
-                if "CUDA out of memory" in str(e):
-                    # Exit the loop if a CUDA OOM error is encountered
-                    out_of_memory = True
-                else:
-                    raise  # Re-raise unexpected errors
-
-            torch.cuda.synchronize()
-            # Clear the CUDA memory after each attempt to ensure a fresh start
-            gc.collect()
-            torch.cuda.empty_cache()
-
-        return max_batch_size
 
     def init_cache_engine(self, cache_config: CacheConfig) -> None:
         self.cache_config = cache_config

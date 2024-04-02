@@ -566,12 +566,15 @@ class SchedulerConfig:
         enable_chunked_prefill: bool = False,
         embedding_mode: Optional[bool] = False,
     ) -> None:
-        if max_num_batched_tokens is not None:
-            self.max_num_batched_tokens = max_num_batched_tokens
-        else:
-            # If max_model_len is too short, use 2048 as the default value for
-            # higher throughput.
-            self.max_num_batched_tokens = max(max_model_len, 2048)
+        # Directly use max_num_batched_tokens if provided.
+        # If embedding_mode is true, use the greater of max_model_len or 32768
+        # for higher throughput.
+        # Otherwise, use the greater of max_model_len or 2048 as a default for
+        # higher throughput.
+        self.max_num_batched_tokens = (
+            max_num_batched_tokens
+            or (max(max_model_len, 32768) if embedding_mode else max(
+                max_model_len, 2048)))
         self.max_num_seqs = max_num_seqs
         self.max_model_len = max_model_len
         self.use_v2_block_manager = use_v2_block_manager
