@@ -1,20 +1,19 @@
 import asyncio
 import time
-from fastapi import Request
 from typing import AsyncIterator, List, Tuple
-from vllm.logger import init_logger
-from vllm.utils import random_uuid
+
+from fastapi import Request
+
 from vllm.engine.async_llm_engine import AsyncLLMEngine
-from vllm.entrypoints.openai.protocol import (
-    EmbeddingRequest,
-    EmbeddingResponse,
-    EmeddingResponseData,
-    UsageInfo,
-)
-from vllm.outputs import EmbeddingRequestOutput
-from vllm.entrypoints.openai.serving_engine import OpenAIServing
+from vllm.entrypoints.openai.protocol import (EmbeddingRequest,
+                                              EmbeddingResponse,
+                                              EmeddingResponseData, UsageInfo)
 from vllm.entrypoints.openai.serving_completion import parse_prompt_format
+from vllm.entrypoints.openai.serving_engine import OpenAIServing
+from vllm.logger import init_logger
+from vllm.outputs import EmbeddingRequestOutput
 from vllm.sampling_params import SamplingParams
+from vllm.utils import random_uuid
 
 logger = init_logger(__name__)
 

@@ -46,7 +46,7 @@ from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.model_executor.weight_utils import (default_weight_loader,
                                               hf_model_weights_iterator,
                                               kv_cache_scales_loader)
-from vllm.sequence import SamplerOutput, EmbeddingSequenceGroupOutput
+from vllm.sequence import SamplerOutput
 from vllm.utils import is_hip
 
 

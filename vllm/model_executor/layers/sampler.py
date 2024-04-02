@@ -9,9 +9,9 @@ from vllm.model_executor.layers.ops.sample import sample as sample_triton
 from vllm.model_executor.sampling_metadata import (SamplingMetadata,
                                                    SamplingTensors)
 from vllm.sampling_params import SamplingParams, SamplingType
-from vllm.sequence import (Logprob, PromptLogprobs, SampleLogprobs,
-                           SamplerOutput, SequenceData,
-                           CompletionSequenceGroupOutput, SequenceOutput)
+from vllm.sequence import (CompletionSequenceGroupOutput, Logprob,
+                           PromptLogprobs, SampleLogprobs, SamplerOutput,
+                           SequenceData, SequenceOutput)
 
 
 class Sampler(nn.Module):

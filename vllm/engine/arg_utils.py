@@ -245,10 +245,7 @@ class EngineArgs:
             default=EngineArgs.gpu_memory_utilization,
             help='the fraction of GPU memory to be used for '
             'the model executor, which can range from 0 to 1.'
-            'If unspecified, will use the default value of 0.9.'
-            'Recommend to set it to 0.8 for embedding models '
-            'to effectively handle memory demands while minimizing '
-            'the risk of OOM errors.')
+            'If unspecified, will use the default value of 0.9.')
         parser.add_argument(
             '--forced-num-gpu-blocks',
             type=int,

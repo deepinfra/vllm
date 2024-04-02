@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 from huggingface_hub import snapshot_download
 
-from vllm import EngineArgs, LLMEngine, CompletionRequestOutput, SamplingParams
+from vllm import CompletionRequestOutput, EngineArgs, LLMEngine, SamplingParams
 from vllm.lora.request import LoRARequest
 
 

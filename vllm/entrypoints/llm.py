@@ -68,6 +68,8 @@ class LLM:
             When a sequence has context length larger than this, we fall back
             to eager mode.
         disable_custom_all_reduce: See ParallelConfig
+        embedding_mode: Whether the running model is for embedding. It should
+            be used for embedding models.
     """
 
     def __init__(

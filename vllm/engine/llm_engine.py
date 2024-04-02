@@ -14,14 +14,13 @@ from vllm.engine.ray_utils import initialize_ray_cluster
 from vllm.executor.executor_base import ExecutorBase
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
-from vllm.model_executor.model_loader import get_architecture_class_name
 from vllm.outputs import (CompletionRequestOutput, EmbeddingRequestOutput,
                           RequestOutputFactory)
 from vllm.sampling_params import SamplingParams
-from vllm.sequence import (EmbeddingSequenceGroupOutput, MultiModalData,
+from vllm.sequence import (CompletionSequenceGroupOutput,
+                           EmbeddingSequenceGroupOutput, MultiModalData,
                            SamplerOutput, Sequence, SequenceGroup,
-                           CompletionSequenceGroupOutput, SequenceOutput,
-                           SequenceStatus)
+                           SequenceOutput, SequenceStatus)
 from vllm.transformers_utils.detokenizer import Detokenizer
 from vllm.transformers_utils.tokenizer_group import (BaseTokenizerGroup,
                                                      get_tokenizer_group)
@@ -724,12 +723,15 @@ class LLMEngine:
 
         # KV Cache Usage in %.
         num_total_gpu = self.cache_config.num_gpu_blocks
-        num_free_gpu = self.scheduler.block_manager.get_num_free_gpu_blocks()
-        gpu_cache_usage = 1.0 - (num_free_gpu / num_total_gpu)
+        gpu_cache_usage = 0.
+        if num_total_gpu is not None:
+            num_free_gpu = self.scheduler.block_manager.get_num_free_gpu_blocks(
+            )
+            gpu_cache_usage = 1.0 - (num_free_gpu / num_total_gpu)
 
         num_total_cpu = self.cache_config.num_cpu_blocks
         cpu_cache_usage = 0.
-        if num_total_cpu > 0:
+        if num_total_cpu is not None and num_total_cpu > 0:
             num_free_cpu = self.scheduler.block_manager.get_num_free_cpu_blocks(
             )
             cpu_cache_usage = 1.0 - (num_free_cpu / num_total_cpu)
