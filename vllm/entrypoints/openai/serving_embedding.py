@@ -131,6 +131,7 @@ class OpenAIServingEmbedding(OpenAIServing):
                                          f"{request_id}-{i}",
                                          prompt_token_ids=input_ids))
         except ValueError as e:
+            # TODO: Use a vllm-specific Validation Error
             return self.create_error_response(str(e))
 
         result_generator: AsyncIterator[Tuple[
@@ -142,6 +143,7 @@ class OpenAIServingEmbedding(OpenAIServing):
             if await raw_request.is_disconnected():
                 # Abort the request if the client disconnects.
                 await self.engine.abort(f"{request_id}-{i}")
+                # TODO: Use a vllm-specific Validation Error
                 return self.create_error_response("Client disconnected")
             final_res_batch[i] = res
         response = request_output_to_embedding_response(
