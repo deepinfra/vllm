@@ -217,6 +217,7 @@ class BertEmbeddings(nn.Module):
         layer_norm_eps: float,
         lora_config: Optional[LoRAConfig] = None,
     ):
+        super().__init__()
         lora_vocab = (lora_config.lora_extra_vocab_size *
                       (lora_config.max_loras or 1)) if lora_config else 0
         self.word_embeddings = VocabParallelEmbedding(
@@ -247,6 +248,7 @@ class BertEncoder(nn.Module):
         config: BertConfig,
         linear_method: Optional[LinearMethodBase] = None,
     ):
+        super().__init__()
         self.layers = nn.ModuleList([
             BertLayer(config, linear_method)
             for _ in range(config.num_hidden_layers)
