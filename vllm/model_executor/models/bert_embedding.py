@@ -352,6 +352,9 @@ class BertEmbeddingModel(nn.Module):
                 # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
+                if name == 'embeddings.position_ids':
+                    # I don't need the numbers from 0 to max_position_embeddings in the weights
+                    continue
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
                                         default_weight_loader)
