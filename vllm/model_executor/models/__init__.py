@@ -58,6 +58,7 @@ _GENERATION_MODELS = {
 
 _EMBEDDING_MODELS = {
     "MistralModel": ("llama_embedding", "LlamaEmbeddingModel"),
+    "BertModel": ("bert_embedding", "BertEmbeddingModel"),
 }
 
 _MODELS = {**_GENERATION_MODELS, **_EMBEDDING_MODELS}
