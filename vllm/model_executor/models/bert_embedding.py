@@ -7,7 +7,7 @@ from transformers import BertConfig
 from vllm.attention import Attention, AttentionMetadata
 from vllm.attention.backends.abstract import AttentionBackend
 from vllm.config import LoRAConfig
-from vllm.model_executor.layers.activation import GeluAndMul, SiluAndMul
+from vllm.model_executor.layers.activation import FastGELU
 from vllm.model_executor.layers.layernorm import RMSNorm
 from vllm.model_executor.layers.linear import (LinearMethodBase,
                                                MergedColumnParallelLinear,
@@ -53,6 +53,7 @@ class BertSelfAttention(nn.Module):
         super().__init__()
         assert hidden_size % num_attention_heads == 0
 
+        self.hidden_size = hidden_size
         self.num_attention_heads = num_attention_heads
         self.attention_head_size = int(hidden_size / num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
@@ -78,11 +79,12 @@ class BertSelfAttention(nn.Module):
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
         # TODO(Iskren): attention_mask -- probably somehow encoded in attn_metadata
+        # import pdb; pdb.set_trace()
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([
-            self.num_attention_heads,
-            self.num_attention_heads,
-            self.num_attention_heads], dim=-1)
+            self.hidden_size,
+            self.hidden_size,
+            self.hidden_size], dim=-1)
         attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
         return attn_output
 
@@ -120,7 +122,7 @@ class BertAttention(nn.Module):
 
 def _get_bert_act_fn(hidden_act: Optional[str]):
     if hidden_act is None or hidden_act == "gelu":
-        return GeluAndMul(approximate="none")
+        return FastGELU()
     raise ValueError(f"unsupported act fn {hidden_act}")
 
 class BertIntermediate(nn.Module):
@@ -249,7 +251,7 @@ class BertEncoder(nn.Module):
         linear_method: Optional[LinearMethodBase] = None,
     ):
         super().__init__()
-        self.layers = nn.ModuleList([
+        self.layer = nn.ModuleList([
             BertLayer(config, linear_method)
             for _ in range(config.num_hidden_layers)
         ])
@@ -259,14 +261,15 @@ class BertEncoder(nn.Module):
         hidden_states: torch.Tensor,
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata
-    ):
-        for i in range(len(self.layers)):
-            layer = self.layers[i]
+    ) -> torch.Tensor:
+        for i in range(len(self.layer)):
+            layer = self.layer[i]
             hidden_states = layer(
                 hidden_states,
                 kv_caches[i],
                 attn_metadata,
             )
+        return hidden_states
 
 class BertEmbeddingModel(nn.Module):
     def __init__(
@@ -308,11 +311,40 @@ class BertEmbeddingModel(nn.Module):
         else:
             hidden_states = self.embeddings(input_ids, positions)
 
-        hidden_states = self.encoder(input_ids, positions, kv_caches, attn_metadata)
+        hidden_states = self.encoder(hidden_states, kv_caches, attn_metadata)
 
 
         # hidden_states = self.norm(hidden_states, ...)
         return hidden_states
+
+    def _first_token_pool(self, last_hidden_states: torch.Tensor,
+                        prompt_lens_tensor: torch.Tensor) -> torch.Tensor:
+        # we need the indexes of the first tokens of each sequence
+        cum_lengths = torch.cumsum(prompt_lens_tensor, dim=0)
+        # the idx:0 should be 0, the length of the first seq should be at idx:1
+        cum_lengths.roll(1)
+        cum_lengths[0] = 0
+
+        first_tokens = last_hidden_states[cum_lengths]
+
+        return first_tokens
+
+    def embedding(
+        self,
+        attn_metadata: AttentionMetadata,
+        hidden_states: torch.Tensor,
+    ) -> Optional[SamplerOutput]:
+        print(f"embedding attn_metadata {attn_metadata}")
+        print(f"embedding hidden_states {hidden_states.size()}")
+        outputs = self._first_token_pool(hidden_states,
+                                         attn_metadata.prompt_lens_tensor)
+
+        seq_outputs = []
+        for output in outputs:
+            seq_outputs.append(
+                EmbeddingSequenceGroupOutput(embeddings=output.tolist()))
+        return SamplerOutput(outputs=seq_outputs)
+
 
     def load_weights(
         self,
@@ -354,6 +386,9 @@ class BertEmbeddingModel(nn.Module):
                     continue
                 if name == 'embeddings.position_ids':
                     # I don't need the numbers from 0 to max_position_embeddings in the weights
+                    continue
+                if name.startswith("pooler.dense."):
+                    # TODO: Fix pooler later, probably won't need weights though
                     continue
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
