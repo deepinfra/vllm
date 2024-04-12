@@ -337,7 +337,7 @@ class LogProbs(BaseModel):
 
 class CompletionResponseChoice(BaseModel):
     index: int
-    text: str
+    text: Union[str, List[int]]
     logprobs: Optional[LogProbs] = None
     finish_reason: Optional[Literal["stop", "length"]] = None
     stop_reason: Union[None, int, str] = Field(
@@ -360,7 +360,7 @@ class CompletionResponse(BaseModel):
 
 class CompletionResponseStreamChoice(BaseModel):
     index: int
-    text: str
+    text: Union[str, List[int]]
     logprobs: Optional[LogProbs] = None
     finish_reason: Optional[Literal["stop", "length"]] = None
     stop_reason: Union[None, int, str] = Field(
