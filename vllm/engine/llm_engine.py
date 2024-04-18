@@ -438,8 +438,6 @@ class LLMEngine:
         
         Returns RequestOutputs that can be returned to the client.
         """
-        now = time.time()
-
         # Organize outputs by [sequence group][step] instead of
         # [step][sequence group].
         output_by_sequence_group = create_output_by_sequence_group(
