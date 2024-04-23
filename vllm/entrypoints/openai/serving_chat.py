@@ -197,6 +197,13 @@ class OpenAIServingChat(OpenAIServing):
                     delta_text = output.text[len(previous_texts[i]):]
                     previous_texts[i] = output.text
                     previous_num_tokens[i] = len(output.token_ids)
+                    prompt_tokens = len(res.prompt_token_ids)
+                    usage = UsageInfo(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=previous_num_tokens[i],
+                        total_tokens=prompt_tokens +
+                                     previous_num_tokens[i],
+                    )
                     if output.finish_reason is None:
                         # Send token-by-token response for each request.n
                         choice_data = ChatCompletionResponseStreamChoice(
@@ -209,18 +216,12 @@ class OpenAIServingChat(OpenAIServing):
                             object=chunk_object_type,
                             created=created_time,
                             choices=[choice_data],
-                            model=model_name)
+                            model=model_name,
+                            usage=usage)
                         data = chunk.model_dump_json(exclude_unset=True)
                         yield f"data: {data}\n\n"
                     else:
                         # Send the finish response for each request.n only once
-                        prompt_tokens = len(res.prompt_token_ids)
-                        final_usage = UsageInfo(
-                            prompt_tokens=prompt_tokens,
-                            completion_tokens=previous_num_tokens[i],
-                            total_tokens=prompt_tokens +
-                            previous_num_tokens[i],
-                        )
                         choice_data = ChatCompletionResponseStreamChoice(
                             index=i,
                             delta=DeltaMessage(content=delta_text),
@@ -232,9 +233,8 @@ class OpenAIServingChat(OpenAIServing):
                             object=chunk_object_type,
                             created=created_time,
                             choices=[choice_data],
-                            model=model_name)
-                        if final_usage is not None:
-                            chunk.usage = final_usage
+                            model=model_name,
+                            usage=usage)
                         data = chunk.model_dump_json(exclude_unset=True,
                                                      exclude_none=True)
                         yield f"data: {data}\n\n"
