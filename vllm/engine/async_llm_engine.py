@@ -208,6 +208,7 @@ class _AsyncLLMEngine(LLMEngine):
         """
         seq_group_metadata_list, scheduler_outputs = self.scheduler.schedule()
 
+        ts_start = time.time()
         if not scheduler_outputs.is_empty():
             # Execute the model.
             output = await self.model_executor.execute_model_async(

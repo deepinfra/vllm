@@ -117,6 +117,10 @@ def make_arg_parser():
         "using @app.middleware('http'). "
         "If a class is provided, vLLM will add it to the server "
         "using app.add_middleware(). ")
+    parser.add_argument(
+        "--enable-json-mode",
+        action="store_true",
+        help="Enables JSON mode by passing response_format=\{\"type\":\"json_object\"\}")
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     return parser

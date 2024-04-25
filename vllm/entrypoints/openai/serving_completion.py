@@ -239,16 +239,13 @@ class OpenAIServingCompletion(OpenAIServing):
                     previous_num_tokens[i] = len(output.token_ids)
                     finish_reason = output.finish_reason
                     stop_reason = output.stop_reason
-                    if output.finish_reason is not None:  # return final usage
-                        prompt_tokens = len(res.prompt_token_ids)
-                        completion_tokens = len(output.token_ids)
-                        final_usage = UsageInfo(
-                            prompt_tokens=prompt_tokens,
-                            completion_tokens=completion_tokens,
-                            total_tokens=prompt_tokens + completion_tokens,
-                        )
-                    else:
-                        final_usage = None
+                    prompt_tokens = len(res.prompt_token_ids)
+                    completion_tokens = len(output.token_ids)
+                    usage = UsageInfo(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=prompt_tokens + completion_tokens,
+                    )
                     response_json = CompletionStreamResponse(
                         id=request_id,
                         created=created_time,
@@ -262,7 +259,7 @@ class OpenAIServingCompletion(OpenAIServing):
                                 stop_reason=stop_reason,
                             )
                         ],
-                        usage=final_usage,
+                        usage=usage,
                     ).model_dump_json(exclude_unset=True)
                     yield f"data: {response_json}\n\n"
         except ValueError as e:

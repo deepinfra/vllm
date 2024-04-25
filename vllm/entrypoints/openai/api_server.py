@@ -1,4 +1,7 @@
 import asyncio
+import json
+import faulthandler
+import signal
 import importlib
 import inspect
 import os
@@ -23,6 +26,8 @@ from vllm.entrypoints.openai.serving_chat import OpenAIServingChat
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 from vllm.logger import init_logger
 from vllm.usage.usage_lib import UsageContext
+
+from vllm.model_executor.structure_logits_processors import JSONStructureLogitsProcessor
 
 TIMEOUT_KEEP_ALIVE = 5  # seconds
 
@@ -91,6 +96,7 @@ async def create_chat_completion(request: ChatCompletionRequest,
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
+
     if request.stream:
         return StreamingResponse(content=generator,
                                  media_type="text/event-stream")
@@ -105,6 +111,7 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
+
     if request.stream:
         return StreamingResponse(content=generator,
                                  media_type="text/event-stream")
@@ -112,8 +119,18 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
         return JSONResponse(content=generator.model_dump())
 
 
+async def _post_init():
+    engine_model_config = await engine.get_model_config()
+    if args.enable_json_mode:
+        JSONStructureLogitsProcessor.init_static(engine_model_config, openai_serving_chat.tokenizer)
+
+
 if __name__ == "__main__":
     args = parse_args()
+
+    faulthandler.enable(all_threads=True)
+    if hasattr(signal, 'SIGUSR1'):
+        faulthandler.register(signal.SIGUSR1)
 
     app.add_middleware(
         CORSMiddleware,
@@ -162,6 +179,17 @@ if __name__ == "__main__":
                                             args.chat_template)
     openai_serving_completion = OpenAIServingCompletion(
         engine, served_model_names, args.lora_modules)
+
+    try:
+        event_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        event_loop = None
+
+    if event_loop is not None and event_loop.is_running(
+    ):  # If the current is instanced by Ray Serve, there is already a running event loop
+        event_loop.create_task(_post_init())
+    else:  # When using single vLLM without engine_use_ray
+        asyncio.run(_post_init())
 
     app.root_path = args.root_path
     uvicorn.run(app,

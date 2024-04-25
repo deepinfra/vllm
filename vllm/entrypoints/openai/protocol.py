@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, conint, model_validator
 
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
+from vllm.model_executor.structure_logits_processors import JSONStructureLogitsProcessor
 
 
 class ErrorResponse(BaseModel):
@@ -56,7 +57,7 @@ class UsageInfo(BaseModel):
 
 class ResponseFormat(BaseModel):
     # type must be "json_object" or "text"
-    type: str = Literal["text", "json_object"]
+    type: Literal["text", "json_object"] = "text"
 
 
 class ChatCompletionRequest(BaseModel):
@@ -159,6 +160,8 @@ class ChatCompletionRequest(BaseModel):
                 return logits
 
             logits_processors = [logit_bias_logits_processor]
+        if self.response_format and self.response_format.type == "json_object":
+            logits_processors = (logits_processors or []) + [JSONStructureLogitsProcessor()]
 
         return SamplingParams(
             n=self.n,
@@ -296,6 +299,8 @@ class CompletionRequest(BaseModel):
                 return logits
 
             logits_processors = [logit_bias_logits_processor]
+        if self.response_format and self.response_format.type == "json_object":
+            logits_processors = (logits_processors or []) + [JSONStructureLogitsProcessor()]
 
         return SamplingParams(
             n=self.n,

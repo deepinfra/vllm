@@ -13,6 +13,7 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               ModelPermission)
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
+from vllm.model_executor.structure_logits_processors import JSONStructureLogitsProcessor
 from vllm.sequence import Logprob
 from vllm.transformers_utils.tokenizer import get_tokenizer
 
