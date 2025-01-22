@@ -765,6 +765,7 @@ class DeepseekV3Model(nn.Module):
         super().__init__()
 
         config = vllm_config.model_config.hf_config
+        model_config = vllm_config.model_config
         cache_config = vllm_config.cache_config
         quant_config = vllm_config.quant_config
 
@@ -784,6 +785,7 @@ class DeepseekV3Model(nn.Module):
             lambda prefix: DeepseekV3DecoderLayer(
                 config,
                 prefix,
+                model_config=model_config,
                 cache_config=cache_config,
                 quant_config=quant_config,
             ),
