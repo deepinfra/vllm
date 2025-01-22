@@ -15,7 +15,7 @@ except ImportError:
     FLASHINFER_WORKSPACE_BUFFER_SIZE = 0
 
 import torch
-from vllm_flash_attn import flash_attn_varlen_func
+from vllm.vllm_flash_attn import flash_attn_varlen_func
 
 from vllm import _custom_ops as ops
 from vllm.attention.backends.abstract import (AttentionBackend, AttentionImpl,
