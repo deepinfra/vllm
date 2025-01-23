@@ -412,6 +412,39 @@ class FlashInferMLAMetadataBuilder(
             last_page_len = self.block_size
         self.paged_kv_last_page_len.append(last_page_len)
 
+
+    def prepare(self):
+        self.slot_mapping: List[int] = []
+        self.prefill_seq_lens: List[int] = []
+        self.context_lens: List[int] = []
+        self.block_tables: List[List[int]] = []
+        self.curr_seq_lens: List[int] = []
+        self.multimodal_placeholder_maps: Dict[
+            str,
+            MultiModalPlaceholderMap] = defaultdict(MultiModalPlaceholderMap)
+        self.num_prefills = 0
+        self.num_prefill_tokens = 0
+        self.num_decode_tokens = 0
+
+        # Please follow https://docs.flashinfer.ai/tutorials/kv_layout.html#page-layout
+        # for the precise definition of the following fields.
+        # An example:
+        # request 1, page indices [0, 5, 8]
+        # request 2, page indices [1, 6, 7]
+        # request 3, page indices [3, 4]
+        # paged_kv_indices is a concatenation of page indices of all requests:
+        # [0, 5, 8, 1, 6, 7, 3, 4]
+        # paged_kv_indptr is used to index into paged_kv_indices:
+        # [0, 3, 6, 8]
+        self.paged_kv_indices: List[int] = []
+        # 0 at the beginning of paged_kv_indptr indicates the start of the
+        # first request’s page indices in the paged_kv_indices list.
+        self.paged_kv_indptr: List[int] = [0]
+        # paged_kv_last_page_len is the length of the last page of each request
+        self.paged_kv_last_page_len: List[int] = []
+        self.total_blocks = 0
+        self.is_profile_run: bool = False
+
     def build(self, seq_lens: List[int], query_lens: List[int],
               cuda_graph_pad_size: int, batch_size: int):
         """Build attention metadata with on-device tensors.
