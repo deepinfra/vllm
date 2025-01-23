@@ -641,7 +641,8 @@ class DeepseekV3MLAAttention(nn.Module):
 
         q_pe, k_pe = self.rotary_emb(positions, q_pe, k_pe)
         # Apply UK, q_nope (B, N, P) @ W_UK (L, N, P) -> (B, N, L)
-        q_nope = torch.einsum("bnp,lnp->bnl", q_nope, self.W_UK)
+        q_nope = torch.einsum("bnp,lnp->bnl", q_nope,
+                              self.W_UK.to(torch.bfloat16) * self.W_scale.to(torch.bfloat16))
         # essemble q, k, and v; here v is repurposed to represent k_pe
 
         q = torch.empty((B, self.num_local_heads,
@@ -665,13 +666,10 @@ class DeepseekV3MLAAttention(nn.Module):
         # Apply UV, (B, N, L) @ W_UV (L, N, V) -> (B, N, V)
         # print shapes and dtypes
         logging.info(f"{attn_output.shape=}, {self.W_UV.shape=}, {self.W_UV.dtype=}, {attn_output.dtype=},"
-                     f"{self.W_scale.shape=}, {self.W_scale.dtype=}")
-        attn_output = torch.bmm(
-            attn_output.to(torch.bfloat16).transpose(0, 1),
-            self.W_UV.to(torch.bfloat16) * self.W_scale.to(torch.bfloat16))
-        attn_output = attn_output.transpose(0, 1)
+                     f"{self.W_scale.shape=}, {self.W_scale.dtype=}, {q.shape=} {q.dtype=}")
 
-        #attn_output = torch.einsum("bnl,lnv->bnv", attn_output, self.W_UV)
+        attn_output = torch.einsum("bnl,lnv->bnv", attn_output,
+                                   self.W_UV.to(torch.bfloat16) * self.W_scale.to(torch.bfloat16))
         attn_output = attn_output.reshape(
             B, self.num_local_heads * self.v_head_dim)
 
