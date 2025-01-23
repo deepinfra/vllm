@@ -20,11 +20,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only DeepseekV3 model."""
+import logging
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 from torch import nn
 from transformers import PretrainedConfig
+
 
 from vllm.attention import Attention, AttentionMetadata
 from vllm.config import CacheConfig, ModelConfig, VllmConfig
@@ -518,6 +520,7 @@ class DeepseekV3MLAAttention(nn.Module):
         # self.W_UV_O = None
 
         kv_b_proj_weight = self.kv_b_proj.weight.T
+
         assert kv_b_proj_weight.shape == (
             self.kv_lora_rank, self.num_local_heads *
             (self.qk_nope_head_dim + self.v_head_dim)), (
@@ -533,6 +536,9 @@ class DeepseekV3MLAAttention(nn.Module):
         )
         self.W_UK, self.W_UV = kv_b_proj_weight.split(
             [self.qk_nope_head_dim, self.v_head_dim], dim=-1)
+        self.W_scale = self.kv_b_proj.weight_scale_inv
+
+        self.W_UK = self.W_UK.contiguous()
 
         self.prefix = prefix
         self.debug_layer_idx = int(self.prefix.split(".")[-2])
@@ -657,7 +663,15 @@ class DeepseekV3MLAAttention(nn.Module):
         # idk why but the attn_output is fp32
         attn_output = attn_output.to(q.dtype)
         # Apply UV, (B, N, L) @ W_UV (L, N, V) -> (B, N, V)
-        attn_output = torch.einsum("bnl,lnv->bnv", attn_output, self.W_UV)
+        # print shapes and dtypes
+        logging.info(f"{attn_output.shape=}, {self.W_UV.shape=}, {self.W_UV.dtype=}, {attn_output.dtype=},"
+                     f"{self.W_scale.shape=}, {self.W_scale.dtype=}")
+        attn_output = torch.bmm(
+            attn_output.to(torch.bfloat16).transpose(0, 1),
+            self.W_UV.to(torch.bfloat16) * self.W_scale.to(torch.bfloat16))
+        attn_output = attn_output.transpose(0, 1)
+
+        #attn_output = torch.einsum("bnl,lnv->bnv", attn_output, self.W_UV)
         attn_output = attn_output.reshape(
             B, self.num_local_heads * self.v_head_dim)
 
