@@ -296,16 +296,13 @@ class ModelConfig:
         self.max_logprobs = max_logprobs
         self.disable_sliding_window = disable_sliding_window
         self.skip_tokenizer_init = skip_tokenizer_init
-<<<<<<< HEAD
         self.enable_sleep_mode = enable_sleep_mode
 
         from vllm.platforms import current_platform
 
         if self.enable_sleep_mode and not current_platform.is_cuda():
             raise ValueError("Sleep mode is only supported on CUDA devices.")
-=======
         self.disable_mla = disable_mla
->>>>>>> b208b908 (squashed simon-mo mla)
 
         hf_config = get_config(self.model, trust_remote_code, revision,
                                code_revision, config_format)
