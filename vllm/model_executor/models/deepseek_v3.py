@@ -20,13 +20,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only DeepseekV3 model."""
-import logging
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 from torch import nn
 from transformers import PretrainedConfig
-
 
 from vllm.attention import Attention, AttentionMetadata
 from vllm.config import CacheConfig, ModelConfig, VllmConfig
@@ -50,11 +48,15 @@ from vllm.model_executor.model_loader.weight_utils import (
     default_weight_loader, maybe_remap_kv_scale_name)
 from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.sequence import IntermediateTensors
+from vllm.logger import init_logger
 
 from .interfaces import SupportsPP
 from .utils import (PPMissingLayer, is_pp_missing_parameter,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
+
+
+logger = init_logger(__name__)
 
 
 class DeepseekV3MLP(nn.Module):
@@ -536,7 +538,11 @@ class DeepseekV3MLAAttention(nn.Module):
         )
         self.W_UK, self.W_UV = kv_b_proj_weight.split(
             [self.qk_nope_head_dim, self.v_head_dim], dim=-1)
-        self.W_scale = self.kv_b_proj.weight_scale_inv
+
+        kv_b_proj_weight_scale = self.kv_b_proj.weight_scale_inv.T
+        self.WK_scale, self.WV_scale = kv_b_proj_weight_scale.split(
+            [kv_b_proj_weight_scale.shape[-1] // 2] * 2, dim=-1
+        )
 
         self.W_UK = self.W_UK.contiguous()
 
@@ -641,8 +647,29 @@ class DeepseekV3MLAAttention(nn.Module):
 
         q_pe, k_pe = self.rotary_emb(positions, q_pe, k_pe)
         # Apply UK, q_nope (B, N, P) @ W_UK (L, N, P) -> (B, N, L)
-        q_nope = torch.einsum("bnp,lnp->bnl", q_nope,
-                              self.W_UK.to(torch.bfloat16) * self.W_scale.to(torch.bfloat16))
+        #logger.info(f"{self.W_UK.shape=}, {self.W_UV.shape=}, {self.W_UV.dtype=}, {self.W_UK.dtype=},"
+        #            f"{self.WK_scale.shape=}, {self.WK_scale.dtype=}, "
+        #            f"{self.WV_scale.shape=}, {self.WV_scale.dtype=}, "
+        #            f"{q.shape=} {q.dtype=}")
+
+        BLOCK_SIZE = 128
+        # self.W_UK.shape=torch.Size([512, 16, 128]),
+        # self.W_UV.shape=torch.Size([512, 16, 128]),
+        # self.W_UV.dtype=torch.float8_e4m3fn,
+        # self.W_scale.shape=torch.Size([4, 32])
+        # attn_output.shape=torch.Size([1, 16, 512]),
+        # self.W_UV.shape=torch.Size([512, 16, 128]),
+        # self.W_UV.dtype=torch.float8_e4m3fn,
+        # attn_output.dtype=torch.bfloat16,
+        # self.W_scale.shape=torch.Size([4, 32]),
+        # self.W_scale.dtype=torch.float32,
+        # q.shape=torch.Size([1, 16, 576])
+        # q.dtype=torch.bfloat16
+        uk = (self.WK_scale.to(torch.bfloat16) * self.W_UK.to(torch.bfloat16)
+              .reshape(self.W_UK.shape[0] // BLOCK_SIZE, BLOCK_SIZE, (self.W_UK.shape[1] * self.W_UK.shape[2]) // BLOCK_SIZE, BLOCK_SIZE)
+              .permute(1, 3, 0, 2)).permute(2, 0, 3, 1).reshape(*self.W_UK.shape)
+        # uk = self.W_UK.to(torch.bfloat16)
+        q_nope = torch.einsum("bnp,lnp->bnl", q_nope, uk)
         # essemble q, k, and v; here v is repurposed to represent k_pe
 
         q = torch.empty((B, self.num_local_heads,
@@ -665,11 +692,15 @@ class DeepseekV3MLAAttention(nn.Module):
         attn_output = attn_output.to(q.dtype)
         # Apply UV, (B, N, L) @ W_UV (L, N, V) -> (B, N, V)
         # print shapes and dtypes
-        logging.info(f"{attn_output.shape=}, {self.W_UV.shape=}, {self.W_UV.dtype=}, {attn_output.dtype=},"
-                     f"{self.W_scale.shape=}, {self.W_scale.dtype=}, {q.shape=} {q.dtype=}")
+        # logger.info(f"{attn_output.shape=}, {self.W_UV.shape=}, {self.W_UV.dtype=}, {attn_output.dtype=},"
+        #             f"{q.shape=} {q.dtype=}")
 
-        attn_output = torch.einsum("bnl,lnv->bnv", attn_output,
-                                   self.W_UV.to(torch.bfloat16) * self.W_scale.to(torch.bfloat16))
+        uv = (self.WV_scale.to(torch.bfloat16) * self.W_UV.to(torch.bfloat16)
+              .reshape(self.W_UV.shape[0] // BLOCK_SIZE, BLOCK_SIZE, (self.W_UV.shape[1] * self.W_UV.shape[2]) // BLOCK_SIZE, BLOCK_SIZE)
+              .permute(1, 3, 0, 2)).permute(2, 0, 3, 1).reshape(*self.W_UV.shape)
+        # uv = self.W_UV.to(torch.bfloat16)
+
+        attn_output = torch.einsum("bnl,lnv->bnv", attn_output, uv)
         attn_output = attn_output.reshape(
             B, self.num_local_heads * self.v_head_dim)
 
