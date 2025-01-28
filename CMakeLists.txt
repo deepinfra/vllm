@@ -15,6 +15,8 @@ project(vllm_extensions LANGUAGES CXX)
 
 # CUDA by default, can be overridden by using -DVLLM_TARGET_DEVICE=... (used by setup.py)
 set(VLLM_TARGET_DEVICE "cuda" CACHE STRING "Target device backend for vLLM")
+SET(CUTLASS_ENABLE_CUBLAS TRUE)
+SET(CUBLAS_ENABLED TRUE)
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Target device: ${VLLM_TARGET_DEVICE}")
@@ -229,8 +231,6 @@ set(VLLM_EXT_SRC
   "csrc/torch_bindings.cpp")
 
 if(VLLM_GPU_LANG STREQUAL "CUDA")
-  SET(CUTLASS_ENABLE_CUBLAS TRUE)
-  SET(CUBLAS_ENABLED TRUE)
   SET(CUTLASS_ENABLE_HEADERS_ONLY ON CACHE BOOL "Enable only the header library")
 
   # Set CUTLASS_REVISION manually -- its revision detection doesn't work in this case.

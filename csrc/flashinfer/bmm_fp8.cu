@@ -20,6 +20,8 @@
 
 #include "pytorch_extension_utils.h"
 
+
+
 void bmm_fp8(at::Tensor A, at::Tensor B, at::Tensor D, at::Tensor A_scale, at::Tensor B_scale,
              at::Tensor workspace_buffer) {
   const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
