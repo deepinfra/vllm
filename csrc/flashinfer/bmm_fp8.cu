@@ -32,7 +32,7 @@ void bmm_fp8(at::Tensor A, at::Tensor B, at::Tensor D, at::Tensor A_scale, at::T
              at::Tensor workspace_buffer) {
   const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
   const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  cublasLtHandle_t lt_handle = at::cuda::getCurrentCUDABlasHandle();
+  cublasLtHandle_t lt_handle = (cublasLtHandle_t)(at::cuda::getCurrentCUDABlasHandle());
 
   TORCH_CHECK(A.is_cuda(), "A must be a CUDA tensor");
   TORCH_CHECK(B.is_cuda(), "B must be a CUDA tensor");
