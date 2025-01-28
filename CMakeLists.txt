@@ -20,6 +20,7 @@ SET(CUBLAS_ENABLED TRUE)
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Target device: ${VLLM_TARGET_DEVICE}")
+message(STATUS "CUTLASS: ${CUTLASS_ENABLE_CUBLAS} ${CUBLAS_ENABLED}")
 
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/utils.cmake)
 

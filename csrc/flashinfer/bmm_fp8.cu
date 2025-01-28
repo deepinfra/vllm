@@ -16,6 +16,12 @@
 
 #include <driver_types.h>
 
+#include <torch/all.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <ATen/cuda/CUDAContext.h>
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
+
 #include "bmm_fp8.cuh"
 
 #include "pytorch_extension_utils.h"
