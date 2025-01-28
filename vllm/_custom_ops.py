@@ -1,6 +1,6 @@
 import contextlib
 import importlib
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union, Dict
 
 import torch
 import torch.library
@@ -262,6 +262,29 @@ def marlin_gemm(a: torch.Tensor, b_q_weight: torch.Tensor,
                 size_n: int, size_k: int) -> torch.Tensor:
     return torch.ops._C.marlin_gemm(a, b_q_weight, b_scales, workspace, size_m,
                                     size_n, size_k)
+
+_cache_buf: Dict[Tuple[str, torch.device], torch.Tensor] = {}
+def _get_cache_buf(name: str, bytes: int, device: torch.device) -> torch.Tensor:
+    key = (name, device)
+    buf = _cache_buf.get(key)
+    if buf is None:
+        buf = torch.empty(bytes, dtype=torch.uint8, device=device)
+        _cache_buf[key] = buf
+    return buf
+
+
+
+def bmm_fp8(A: torch.Tensor, B: torch.Tensor,
+            A_scale: torch.Tensor, B_scale: torch.Tensor, dtype: torch.dtype,
+            out: Optional[torch.Tensor] = None):
+    if out is None:
+        out = torch.empty(
+            (A.shape[0], A.shape[1], B.shape[2]),
+            device=A.device,
+            dtype=dtype,
+        )
+    workspace_buffer = _get_cache_buf("bmm_fp8_workspace", 32 * 1024 * 1024, A.device)
+    torch.ops._C.bmm_fp8(A, B, out, A_scale, B_scale, workspace_buffer)
 
 
 # marlin_24

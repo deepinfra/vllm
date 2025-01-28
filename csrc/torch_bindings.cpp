@@ -5,6 +5,9 @@
 
 #include <torch/library.h>
 
+void bmm_fp8(at::Tensor A, at::Tensor B, at::Tensor D, at::Tensor A_scale, at::Tensor B_scale,
+             at::Tensor workspace_buffer);
+
 // Note on op signatures:
 // The X_meta signatures are for the meta functions corresponding to op X.
 // They must be kept in sync with the signature for X. Generally, only
@@ -159,6 +162,12 @@ TORCH_LIBRARY_EXPAND(TORCH_EXTENSION_NAME, ops) {
 
   // Quantization ops
 #ifndef USE_ROCM
+
+  ops.def(
+      "bmm_fp8(Tensor A, Tensor B, Tensor D, Tensor A_scale, Tensor B_scale, "
+      "Tensor workspace_buffer) -> ()");
+  ops.impl("bmm_fp8", torch::kCUDA, &bmm_fp8);
+
   // Quantized GEMM for AQLM.
   ops.def(
       "aqlm_gemm(Tensor input, Tensor codes, Tensor codebooks, "
