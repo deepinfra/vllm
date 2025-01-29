@@ -484,7 +484,8 @@ class DeepseekV3MLAAttention(nn.Module):
             num_kv_heads=1,
             cache_config=cache_config,
             quant_config=quant_config,
-            prefix=f"{prefix}.attn",
+            prefix=f"{prefix}.attn_mqa",
+            use_mla=True
         )
 
         self.attn_mha = Attention(
@@ -494,7 +495,8 @@ class DeepseekV3MLAAttention(nn.Module):
             num_kv_heads=self.num_local_heads,
             cache_config=cache_config,
             quant_config=quant_config,
-            prefix=f"{prefix}.attn",
+            prefix=f"{prefix}.attn_mha",
+            use_mla=True
         )
 
         self.w_kc = None
