@@ -2,8 +2,7 @@
 from collections import defaultdict
 from contextlib import contextmanager
 from itertools import accumulate
-from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type,
-                    TypeVar, Union)
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Type, TypeVar, Union
 
 import numpy as np
 import torch
@@ -289,8 +288,7 @@ class CommonAttentionState(AttentionState):
         self._is_graph_capturing = False
 
     @contextmanager
-    def graph_capture(self, max_batch_size: int,
-                      positions: Optional[torch.Tensor]):
+    def graph_capture(self, max_batch_size: int):
 
         self._is_graph_capturing = True
 

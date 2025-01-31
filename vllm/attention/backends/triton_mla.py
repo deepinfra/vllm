@@ -93,8 +93,7 @@ class TritonMLAState(AttentionState):
         self._is_graph_capturing = False
 
     @contextmanager
-    def graph_capture(self, max_batch_size: int,
-                      positions: Optional[torch.Tensor]):
+    def graph_capture(self, max_batch_size: int):
         self._is_graph_capturing = True
 
         self._graph_slot_mapping = torch.full((max_batch_size, ),
@@ -107,8 +106,9 @@ class TritonMLAState(AttentionState):
         self._graph_block_tables = torch.from_numpy(
             self.runner.graph_block_tables).to(device=self.runner.device)
 
-        assert positions is not None
-        self._positions = positions
+        self._positions = torch.zeros((max_batch_size, ),
+                                      dtype=torch.long,
+                                      device=self.runner.device)
 
         yield
 
@@ -116,6 +116,7 @@ class TritonMLAState(AttentionState):
         del self._graph_slot_mapping
         del self._graph_seq_lens
         del self._graph_block_tables
+        del self._positions
 
     def graph_clone(self, batch_size: int):
         assert self._is_graph_capturing
@@ -159,6 +160,7 @@ class TritonMLAState(AttentionState):
             "slot_mapping": attn_metadata.slot_mapping,
             "seq_lens_tensor": attn_metadata.decode_metadata.seq_lens_tensor,
             "block_tables": attn_metadata.decode_metadata.block_tables,
+            "input_positions": attn_metadata.decode_metadata.input_positions,
         }
         if is_encoder_decoder_model:
             raise NotImplementedError(
@@ -170,10 +172,16 @@ class TritonMLAState(AttentionState):
                                     input_buffers,
                                     attn_metadata,
                                     is_encoder_decoder_model: bool = False):
+        input_positions = attn_metadata.input_positions
+        num_positions = input_positions.shape[0]
         input_buffers["seq_lens_tensor"].copy_(
             attn_metadata.decode_metadata.seq_lens_tensor, non_blocking=True)
         input_buffers["block_tables"].copy_(
             attn_metadata.decode_metadata.block_tables, non_blocking=True)
+        # CUDA graph buffer is padded so only perform a partial copy based on
+        # num_positions
+        input_buffers["input_positions"][:num_positions].copy_(
+            input_positions, non_blocking=True)
         if is_encoder_decoder_model:
             raise NotImplementedError(
                 "TritonMLAState does not support encoder/decoder yet")
