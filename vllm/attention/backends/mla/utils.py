@@ -348,10 +348,6 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         is_decode = attn_metadata.decode_metadata is not None
         is_prefill = attn_metadata.prefill_metadata is not None
 
-        if (is_decode and is_prefill):
-            raise NotImplementedError(
-                "chunked prefill is not supported for MLAImplBase")
-
         # Restore head dim (for rotary embedding)
         k_pe = k_pe.unsqueeze(1)
         assert hasattr(attn_metadata, "input_positions")
@@ -385,7 +381,8 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
             )
 
         if attn_metadata.prefill_metadata is not None:
-            return self._forward_prefill(q, k_c_normed, k_pe, attn_metadata)
+            return self._forward_prefill(q, k_c_normed, k_pe, kv_cache,
+                                         attn_metadata)
 
         if attn_metadata.decode_metadata is not None:
             return self._forward_decode(q_nope, q_pe, kv_cache, attn_metadata)
