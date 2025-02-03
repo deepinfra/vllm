@@ -80,6 +80,7 @@ if TYPE_CHECKING:
     VLLM_MLA_DISABLE: bool = False
     VLLM_MLA_PERFORM_MATRIX_ABSORPTION: bool = True
     VLLM_MLA_CUDA_MEM_ALIGN_KV_CACHE: bool = True
+    VLLM_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON: bool = False
 
 
 def get_default_cache_root():
@@ -521,6 +522,12 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # the is enabled by default
     "VLLM_MLA_PERFORM_MATRIX_ABSORPTION":
     lambda: bool(int(os.getenv("VLLM_MLA_PERFORM_MATRIX_ABSORPTION", "1"))),
+
+    # If set, vLLM will use the Triton implementation of moe_align_block_size,
+    # i.e. moe_align_block_size_triton in fused_moe.py.
+    "VLLM_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON":
+    lambda: bool(int(os.getenv("VLLM_ENABLE_MOE_ALIGN_BLOCK_SIZE_TRITON", "0"))
+                 ),
 
 
     # When on a Nvidia GPU aligns single entries (within a page) so they are 256
