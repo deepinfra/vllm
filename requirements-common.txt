@@ -27,9 +27,9 @@ filelock >= 3.16.1 # need to contain https://github.com/tox-dev/filelock/pull/31
 partial-json-parser # used for parsing partial JSON outputs
 pyzmq
 msgspec
-gguf == 0.10.0
+#gguf == 0.10.0
 importlib_metadata
-mistral_common[opencv] >= 1.5.0
+#mistral_common[opencv] >= 1.5.0
 pyyaml
 six>=1.16.0; python_version > '3.11' # transitive dependency of pandas that needs to be the latest version for python 3.12
 setuptools>=74.1.1; python_version > '3.11' # Setuptools is used by triton, we need to ensure a modern version is installed for 3.12+ so that it does not try to import distutils, which was removed in 3.12
