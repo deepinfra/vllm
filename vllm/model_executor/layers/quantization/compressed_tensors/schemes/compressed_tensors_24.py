@@ -45,7 +45,6 @@ class CompressedTensors24(CompressedTensorsScheme):
                 "Sparse CUTLASS not supported. vLLM must be built with "
                 "CUDA 12.2 or later to use this feature")
 
-        self.output_dtype = params_dtype
         layer.logical_widths = output_partition_sizes
         self.weights_dtype: torch.dtype = self._get_params_dtype(params_dtype)
 
@@ -128,6 +127,11 @@ class CompressedTensors24(CompressedTensorsScheme):
                 layer.weight_scale = torch.nn.Parameter(
                     layer.weight_scale.data, requires_grad=False)
 
+        # Set all negative zero values to 0 prior to compression
+        if (layer.weight.dtype.is_floating_point
+                and layer.weight.dtype.itemsize >= 2):
+            layer.weight.data[layer.weight.data == -0.0] = 0.0
+
         w_compressed, meta = ops.cutlass_sparse_compress(layer.weight.data)
         layer.weight = torch.nn.Parameter(w_compressed, requires_grad=False)
         layer.meta = torch.nn.Parameter(meta, requires_grad=False)
@@ -169,13 +173,16 @@ class CompressedTensors24(CompressedTensorsScheme):
             input_scale = layer.input_scale
             q_input = x
 
-        out = ops.cutlass_scaled_sparse_mm(a=q_input,
-                                           bt_nzs=layer.weight,
-                                           bt_meta=layer.meta,
-                                           scale_a=input_scale,
-                                           scale_b=layer.weight_scale,
-                                           out_dtype=self.output_dtype,
-                                           bias=bias)
+        out = ops.cutlass_scaled_sparse_mm(
+            a=q_input,
+            bt_nzs=layer.weight,
+            bt_meta=layer.meta,
+            scale_a=input_scale,
+            scale_b=layer.weight_scale,
+            out_dtype=x.dtype,
+            bias=bias,
+        )
+
         assert out.is_contiguous()
         return out
 
