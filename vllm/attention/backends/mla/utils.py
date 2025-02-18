@@ -272,7 +272,7 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
 
         W_Q = q_proj[..., :self.qk_nope_head_dim]
         self.W_QR = q_proj[..., self.qk_nope_head_dim:]\
-            .flatten(start_dim=1).contiguous()
+            .flatten(start_dim=1).contiguous().to(torch.bfloat16)
 
         if envs.VLLM_MLA_PERFORM_MATRIX_ABSORPTION:
             #
@@ -281,7 +281,7 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
             # for decode, as a result we end up with absorbed weights for decode
             # and another copy of raw weights for prefill.
             #
-            self.W_UK, self.W_UV = kv_b_proj_weight.split(
+            self.W_UK, self.W_UV = kv_b_proj_weight.to(torch.bfloat16).split(
                 [self.qk_nope_head_dim, self.v_head_dim], dim=-1)
             # We absorb `W_UK` into `W_Q` resulting in either W_Q_UK or W_UQ_UK
             # depending q_lora_rank, the former if q_lora_rank is None, the
@@ -289,12 +289,12 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
             # basically if q_lora_rank is none we are absorbing into q_proj
             # instead of UQ
             self.W_Q_UK = torch.einsum("qnd,lnd -> qnl", W_Q, W_UK)\
-                .flatten(start_dim=1).contiguous()
+                .flatten(start_dim=1).contiguous().to(torch.bfloat16)
 
             W_O = dequantize_fp8(self.o_proj)\
                 .view(-1, self.num_heads, self.v_head_dim)
             self.W_UV_O = torch.einsum("lnd,hnd -> nlh", W_UV, W_O)\
-                .flatten(start_dim=0, end_dim=1).contiguous()
+                .flatten(start_dim=0, end_dim=1).contiguous().to(torch.bfloat16)
 
             tp_size = get_tensor_model_parallel_world_size()
             self.o_proj_absorbed = RowParallelLinear(
@@ -307,9 +307,9 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
 
             self.o_proj_absorbed.weight = torch.nn.Parameter(self.W_UV_O.T)
         else:
-            self.W_UV = W_UV
-            self.W_UK = W_UK
-            self.W_Q = W_Q.flatten(start_dim=1)
+            self.W_UV = W_UV.to(torch.bfloat16)
+            self.W_UK = W_UK.to(torch.bfloat16)
+            self.W_Q = W_Q.flatten(start_dim=1).to(torch.bfloat16)
 
     @abstractmethod
     def _forward_prefill(
