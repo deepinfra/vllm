@@ -464,7 +464,7 @@ class OpenAIServingTranscription(OpenAIServing):
         # Non-streaming response.
         try:
             async for op in result_generator:
-                logger.info(f"Transcription: {op}")
+                logger.info(f"Transcription: request_id {op.request_id} output: {op.outputs[0].text}")
                 result = op
             logger.info(f"Transcription result: {result.outputs[0].text} request_id: {request_id}")
             return TranscriptionResponse(text=result.outputs[0].text)
