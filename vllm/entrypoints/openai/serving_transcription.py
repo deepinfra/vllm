@@ -465,6 +465,7 @@ class OpenAIServingTranscription(OpenAIServing):
         try:
             async for op in result_generator:
                 result = op
+            logger.info(f"Transcription result: {result.outputs[0].text}")
             return TranscriptionResponse(text=result.outputs[0].text)
         except asyncio.CancelledError:
             return self.create_error_response("Client disconnected")
