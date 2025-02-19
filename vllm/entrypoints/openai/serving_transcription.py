@@ -217,7 +217,7 @@ class OpenAIServingTranscription(OpenAIServing):
     async def create_transcription(
         self, audio_data: bytes, request: TranscriptionRequest,
         raw_request: Request
-    ) -> Union[TranscriptionResponse, TranscriptionResponseVerbose,
+    ) -> Union[TranscriptionResponse, TranscriptionResponseVerbose, str,
                ErrorResponse]:
         """Transcription API similar to OpenAI's API.
 
@@ -297,7 +297,10 @@ class OpenAIServingTranscription(OpenAIServing):
         try:
             async for op in result_generator:
                 result = op
-            return TranscriptionResponse(text=result.outputs[0].text)
+            if request.response_format == "json":
+                return TranscriptionResponse(text=result.outputs[0].text)
+            else:
+                return result.outputs[0].text
         except asyncio.CancelledError:
             return self.create_error_response("Client disconnected")
         except ValueError as e:
