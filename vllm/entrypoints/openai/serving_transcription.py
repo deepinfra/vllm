@@ -160,6 +160,8 @@ class OpenAIServingTranscription(OpenAIServing):
                          request_logger=request_logger,
                          return_tokens_as_token_ids=return_tokens_as_token_ids)
 
+        print("TEMIRULANAAAAAAAA" * 10000)
+
         diff_sampling_param = self.model_config.get_diff_sampling_param()
         if diff_sampling_param:
             logger.info(
