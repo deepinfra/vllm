@@ -445,7 +445,7 @@ class OpenAIServingTranscription(OpenAIServing):
             )
             sampling_params.skip_special_tokens = False
             sampling_params.logprobs = 1
-            sampling_params.temperature = 0.7
+            sampling_params.temperature = request.temperature
             sampling_params.bad_words = ["<|notimestamps|>"]
 
             """
