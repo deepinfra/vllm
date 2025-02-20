@@ -444,6 +444,7 @@ class OpenAIServingTranscription(OpenAIServing):
             )
             sampling_params.skip_special_tokens = False
             sampling_params.logprobs = 0
+            sampling_params.temperature = 0.3
 
             """
             SamplingParams(n=1,
