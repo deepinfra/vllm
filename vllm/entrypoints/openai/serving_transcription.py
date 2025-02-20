@@ -377,7 +377,8 @@ class OpenAIServingTranscription(OpenAIServing):
                     "audio": (y, sr),
                 },
             },
-            "decoder_prompt": f"<|startoftranscript|>{lang_token}<|transcribe|>{request.prompt}",
+            #"decoder_prompt": f"<|startoftranscript|>{lang_token}<|transcribe|>{request.prompt}",
+            "decoder_prompt": f"<|startoftranscript|>",
         }
         return cast(PromptType, prompt)
 
