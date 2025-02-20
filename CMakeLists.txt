@@ -149,6 +149,8 @@ else()
     "${${VLLM_GPU_LANG}_SUPPORTED_ARCHS}")
 endif()
 
+set(VLLM_FA_GPU_ARCHES $ENV{VLLM_FA_CMAKE_GPU_ARCHES}) # "100a-real"
+
 #
 # Query torch for additional GPU compilation flags for the given
 # `VLLM_GPU_LANG`.
@@ -229,7 +231,7 @@ if(VLLM_GPU_LANG STREQUAL "CUDA")
 
   # Set CUTLASS_REVISION manually -- its revision detection doesn't work in this case.
   # Please keep this in sync with FetchContent_Declare line below.
-  set(CUTLASS_REVISION "v3.7.0" CACHE STRING "CUTLASS revision to use")
+  set(CUTLASS_REVISION "vllm-sm100" CACHE STRING "CUTLASS revision to use")
 
   # Use the specified CUTLASS source directory for compilation if VLLM_CUTLASS_SRC_DIR is provided
   if (DEFINED ENV{VLLM_CUTLASS_SRC_DIR})
@@ -245,9 +247,9 @@ if(VLLM_GPU_LANG STREQUAL "CUDA")
   else()
     FetchContent_Declare(
         cutlass
-        GIT_REPOSITORY https://github.com/nvidia/cutlass.git
+        GIT_REPOSITORY https://github.com/deepinfra/cutlass.git
         # Please keep this in sync with CUTLASS_REVISION line above.
-        GIT_TAG v3.7.0
+        GIT_TAG vllm-sm100
         GIT_PROGRESS TRUE
 
         # Speed up CUTLASS download by retrieving only the specified GIT_TAG instead of the history.
@@ -602,8 +604,8 @@ if(VLLM_FLASH_ATTN_SRC_DIR)
 else()
   FetchContent_Declare(
           vllm-flash-attn
-          GIT_REPOSITORY https://github.com/vllm-project/flash-attention.git
-          GIT_TAG 720c94869cf2e0ff5a706e9c7f1dce0939686ade
+          GIT_REPOSITORY https://github.com/deepinfra/flash-attention.git
+          GIT_TAG main
           GIT_PROGRESS TRUE
           # Don't share the vllm-flash-attn build between build types
           BINARY_DIR ${CMAKE_BINARY_DIR}/vllm-flash-attn
