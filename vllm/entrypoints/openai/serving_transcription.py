@@ -246,6 +246,9 @@ LANG_ID_TO_LANG_TOKEN = {
     },
 }
 
+def trim_lang_token(lang_token: str) -> str:
+    return lang_token.strip().replace("<|", "").replace("|>", "")
+
 # As per https://platform.openai.com/docs/guides/speech-to-text#overview.
 # TODO configurable
 MAX_AUDIO_CLIP_FILESIZE_MB = 25
@@ -355,7 +358,7 @@ class OpenAIServingTranscription(OpenAIServing):
 
     async def _preprocess_transcription(
         self, audio_data: bytes, request: TranscriptionRequest, raw_request: Request
-    ) -> PromptType:
+    ) -> tuple[PromptType, float, str]:
         # Validate request
         if len(audio_data) / 1024**2 > MAX_AUDIO_CLIP_FILESIZE_MB:
             raise ValueError("Maximum file size exceeded.")
@@ -363,7 +366,8 @@ class OpenAIServingTranscription(OpenAIServing):
         with io.BytesIO(audio_data) as bytes_:
             y, sr = librosa.load(bytes_)
 
-        if librosa.get_duration(y=y, sr=sr) > MAX_AUDIO_CLIP_DURATION_S:
+        audio_duration = librosa.get_duration(y=y, sr=sr)
+        if audio_duration > MAX_AUDIO_CLIP_DURATION_S:
             raise ValueError(
                 f"Maximum clip duration ({MAX_AUDIO_CLIP_DURATION_S}s) " "exceeded."
             )
@@ -380,12 +384,12 @@ class OpenAIServingTranscription(OpenAIServing):
             "decoder_prompt": f"<|startoftranscript|>{lang_token}<|transcribe|>{request.prompt}",
             # "decoder_prompt": f"<|startoftranscript|>",
         }
-        return cast(PromptType, prompt)
+        return cast(PromptType, prompt), audio_duration, lang_token
 
     # TODO (varun) : Make verbose response work !
     async def create_transcription(
         self, audio_data: bytes, request: TranscriptionRequest, raw_request: Request
-    ) -> Union[TranscriptionResponse, TranscriptionResponseVerbose, ErrorResponse]:
+    ) -> Union[TranscriptionResponse, TranscriptionResponseVerbose, ErrorResponse, str]:
         """Transcription API similar to OpenAI's API.
 
         See https://platform.openai.com/docs/api-reference/audio/createTranscription
@@ -401,9 +405,9 @@ class OpenAIServingTranscription(OpenAIServing):
         if self.engine_client.errored:
             raise self.engine_client.dead_error
 
-        if request.response_format not in ["text", "json"]:
+        if request.response_format not in ["text", "json", "verbose_json"]:
             return self.create_error_response(
-                "Currently only support response_format `text` or `json`"
+                "Currently only support response_format `text`, `verbose_json` or `json`"
             )
 
         try:
@@ -421,7 +425,7 @@ class OpenAIServingTranscription(OpenAIServing):
                     "Currently do not support PromptAdapter for Transcription."
                 )
 
-            prompt = await self._preprocess_transcription(
+            prompt, audio_duration, lang_token = await self._preprocess_transcription(
                 request=request, audio_data=audio_data, raw_request=raw_request
             )
 
@@ -443,23 +447,10 @@ class OpenAIServingTranscription(OpenAIServing):
             sampling_params = request.to_sampling_params(
                 default_max_tokens, default_params
             )
-            sampling_params.skip_special_tokens = False
+            sampling_params.skip_special_tokens = True
             sampling_params.logprobs = 2
             sampling_params.temperature = request.temperature
             sampling_params.bad_words = ["<|notimestamps|>"]
-
-            """
-            SamplingParams(n=1,
-            presence_penalty=0.0, 
-            frequency_penalty=0.0, 
-            repetition_penalty=1.0, 
-            temperature=0.0, 
-            top_p=1.0, top_k=-1, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], 
-            include_stop_str_in_output=False, ignore_eos=False, max_tokens=448, min_tokens=0, 
-            logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, 
-            truncate_prompt_tokens=None, guided_decoding=None), prompt_token_ids: None, lora_request: None, 
-            prompt_adapter_request: None.
-            """
 
             self._log_inputs(
                 request_id,
@@ -484,7 +475,20 @@ class OpenAIServingTranscription(OpenAIServing):
             async for op in result_generator:
                 result = op
             logger.info(f"Transcription result: {result}")
-            return TranscriptionResponse(text=result.outputs[0].text)
+            if request.response_format == "json":
+                return TranscriptionResponse(text=result.outputs[0].text)
+            elif request.response_format == "text":
+                return result.outputs[0].text
+            elif request.response_format == "verbose_json":
+                return TranscriptionResponseVerbose.from_completion_output(
+                    audio_duration=audio_duration,
+                    language=trim_lang_token(lang_token),
+                    completion_output=result.outputs[0],
+                )
+            else:
+                return self.create_error_response(
+                    "Currently only support response_format `text`, `verbose_json` or `json`"
+                )
         except asyncio.CancelledError:
             return self.create_error_response("Client disconnected")
         except ValueError as e:
