@@ -480,10 +480,11 @@ class OpenAIServingTranscription(OpenAIServing):
             elif request.response_format == "text":
                 return result.outputs[0].text
             elif request.response_format == "verbose_json":
-                x = TranscriptionResponseVerbose.from_completion_output(
+                x = TranscriptionResponseVerbose(
+                    task="transcription",
                     audio_duration=audio_duration,
                     language=trim_lang_token(lang_token),
-                    completion_output=result.outputs[0],
+                    text=result.outputs[0].text,
                 )
                 logger.info(f"TEMIRULAN {x}")
                 return x
