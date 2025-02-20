@@ -480,11 +480,13 @@ class OpenAIServingTranscription(OpenAIServing):
             elif request.response_format == "text":
                 return result.outputs[0].text
             elif request.response_format == "verbose_json":
-                return TranscriptionResponseVerbose.from_completion_output(
+                x = TranscriptionResponseVerbose.from_completion_output(
                     audio_duration=audio_duration,
                     language=trim_lang_token(lang_token),
                     completion_output=result.outputs[0],
                 )
+                logger.info(f"TEMIRULAN {x}")
+                return x
             else:
                 return self.create_error_response(
                     "Currently only support response_format `text`, `verbose_json` or `json`"
