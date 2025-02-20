@@ -13,6 +13,7 @@ from pydantic import (BaseModel, ConfigDict, Field, TypeAdapter,
                       ValidationInfo, field_validator, model_validator)
 from typing_extensions import Annotated, TypeAlias
 
+from vllm.outputs import CompletionOutput
 from vllm.entrypoints.chat_utils import ChatCompletionMessageParam
 from vllm.logger import init_logger
 from vllm.pooling_params import PoolingParams
@@ -1524,7 +1525,6 @@ class TranscriptionRequest(OpenAIBaseModel):
         return SamplingParams.from_optional(temperature=temperature,
                                             max_tokens=max_tokens)
 
-
 # Transcription response objects
 class TranscriptionResponse(OpenAIBaseModel):
     text: str
@@ -1585,7 +1585,10 @@ class TranscriptionSegment(OpenAIBaseModel):
 
 
 class TranscriptionResponseVerbose(OpenAIBaseModel):
-    duration: str
+    task: str
+    """The task type of the transcription."""
+
+    duration: float
     """The duration of the input audio."""
 
     language: str
@@ -1599,3 +1602,12 @@ class TranscriptionResponseVerbose(OpenAIBaseModel):
 
     words: Optional[List[TranscriptionWord]] = None
     """Extracted words and their corresponding timestamps."""
+
+    @classmethod
+    def from_completion_output(
+        cls, audio_duration: float, language: str, completion_output: CompletionOutput) -> "TranscriptionResponseVerbose":
+        return cls(
+            task="transcribe",
+            duration=audio_duration,
+            language=language,
+            text=completion_output.text)
