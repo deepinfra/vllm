@@ -442,6 +442,21 @@ class OpenAIServingTranscription(OpenAIServing):
             sampling_params = request.to_sampling_params(
                 default_max_tokens, default_params
             )
+            sampling_params.skip_special_tokens = False
+            sampling_params.logprobs = 0
+
+            """
+            SamplingParams(n=1,
+            presence_penalty=0.0, 
+            frequency_penalty=0.0, 
+            repetition_penalty=1.0, 
+            temperature=0.0, 
+            top_p=1.0, top_k=-1, min_p=0.0, seed=None, stop=[], stop_token_ids=[], bad_words=[], 
+            include_stop_str_in_output=False, ignore_eos=False, max_tokens=448, min_tokens=0, 
+            logprobs=None, prompt_logprobs=None, skip_special_tokens=True, spaces_between_special_tokens=True, 
+            truncate_prompt_tokens=None, guided_decoding=None), prompt_token_ids: None, lora_request: None, 
+            prompt_adapter_request: None.
+            """
 
             self._log_inputs(
                 request_id,
@@ -465,7 +480,7 @@ class OpenAIServingTranscription(OpenAIServing):
         try:
             async for op in result_generator:
                 result = op
-            logger.info(f"Transcription result: {result.outputs[0].text} request_id: {request_id}")
+            logger.info(f"Transcription result: {result}")
             return TranscriptionResponse(text=result.outputs[0].text)
         except asyncio.CancelledError:
             return self.create_error_response("Client disconnected")
