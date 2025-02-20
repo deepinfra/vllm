@@ -377,8 +377,8 @@ class OpenAIServingTranscription(OpenAIServing):
                     "audio": (y, sr),
                 },
             },
-            #"decoder_prompt": f"<|startoftranscript|>{lang_token}<|transcribe|>{request.prompt}",
-            "decoder_prompt": f"<|startoftranscript|>",
+            "decoder_prompt": f"<|startoftranscript|>{lang_token}<|transcribe|>{request.prompt}",
+            # "decoder_prompt": f"<|startoftranscript|>",
         }
         return cast(PromptType, prompt)
 
@@ -445,7 +445,7 @@ class OpenAIServingTranscription(OpenAIServing):
             )
             sampling_params.skip_special_tokens = False
             sampling_params.logprobs = 0
-            sampling_params.temperature = 0.3
+            sampling_params.bad_words = ["<|notimestamps|>"]
 
             """
             SamplingParams(n=1,
