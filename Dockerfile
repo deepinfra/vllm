@@ -51,7 +51,7 @@ WORKDIR /workspace
 # pytorch will not appear as a vLLM dependency in all of the following steps
 # after this step
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install --index-url https://download.pytorch.org/whl/nightly/cu128 "torch==2.7.0.dev20250205+cu128" "torchvision==0.22.0.dev20250205"
+    python3 -m pip install --index-url https://download.pytorch.org/whl/nightly/cu128 "torch==2.7.0.dev20250218+cu128" "torchvision==0.22.0.dev20250218+cu128"
 
 COPY requirements-common.txt requirements-common.txt
 COPY requirements-cuda.txt requirements-cuda.txt
@@ -62,10 +62,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # can be useful for both `dev` and `test`
 # explicitly set the list to avoid issues with torch 2.2
 # see https://github.com/pytorch/pytorch/pull/123243
-ARG torch_cuda_arch_list='7.0 7.5 8.0 8.6 8.9 9.0 10.0 10.1 12.0+PTX'
+ARG torch_cuda_arch_list='9.0 10.0 10.1 12.0+PTX'
 ENV TORCH_CUDA_ARCH_LIST=${torch_cuda_arch_list}
 # Override the arch list for flash-attn to reduce the binary size
-ARG vllm_fa_cmake_gpu_arches='80-real;90-real'
+ARG vllm_fa_cmake_gpu_arches='90a-real;100a-real'
 ENV VLLM_FA_CMAKE_GPU_ARCHES=${vllm_fa_cmake_gpu_arches}
 #################### BASE BUILD IMAGE ####################
 
@@ -184,7 +184,7 @@ RUN ldconfig /usr/local/cuda-$(echo $CUDA_VERSION | cut -d. -f1,2)/compat/
 # pytorch will not appear as a vLLM dependency in all of the following steps
 # after this step
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install --index-url https://download.pytorch.org/whl/nightly/cu128 "torch==2.7.0.dev20250205+cu128" "torchvision==0.22.0.dev20250205"
+    python3 -m pip install --index-url https://download.pytorch.org/whl/nightly/cu128 "torch==2.7.0.dev20250218+cu128" "torchvision==0.22.0.dev20250218+cu128"
 
 # Install vllm wheel first, so that torch etc will be installed.
 RUN --mount=type=bind,from=build,src=/workspace/dist,target=/vllm-workspace/dist \
@@ -274,5 +274,7 @@ ENTRYPOINT ["./sagemaker-entrypoint.sh"]
 
 FROM vllm-openai-base AS vllm-openai
 
+COPY triton-3.2.0+git750c1075-cp312-cp312-linux_x86_64.whl .
+RUN pip install triton-3.2.0+git750c1075-cp312-cp312-linux_x86_64.whl
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 #################### OPENAI API SERVER ####################
