@@ -358,7 +358,7 @@ class OpenAIServingTranscription(OpenAIServing):
 
     async def _preprocess_transcription(
         self, audio_data: bytes, request: TranscriptionRequest, raw_request: Request
-    ) -> tuple[PromptType, float, str]:
+    ) -> Tuple[PromptType, float, str]:
         # Validate request
         if len(audio_data) / 1024**2 > MAX_AUDIO_CLIP_FILESIZE_MB:
             raise ValueError("Maximum file size exceeded.")
