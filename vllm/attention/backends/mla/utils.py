@@ -3,10 +3,11 @@
 import functools
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, List, Optional, Tuple
+from typing import Any, Dict, Generic, List, Optional
 
 import torch
-from compressed_tensors.quantization import QuantizationStrategy
+import triton
+import triton.language as tl
 
 from vllm import _custom_ops as ops
 from vllm import envs
@@ -17,17 +18,7 @@ from vllm.attention.backends.utils import get_flash_attn_version
 from vllm.distributed import (get_tensor_model_parallel_world_size,
                               tensor_model_parallel_all_reduce)
 from vllm.model_executor.layers.linear import (ColumnParallelLinear,
-                                               LinearBase, RowParallelLinear,
-                                               UnquantizedLinearMethod)
-from vllm.model_executor.layers.quantization.compressed_tensors.compressed_tensors import (  # noqa: E501
-    CompressedTensorsLinearMethod)
-from vllm.model_executor.layers.quantization.compressed_tensors.schemes import (
-    CompressedTensorsW8A8Fp8)
-from vllm.model_executor.layers.quantization.fp8 import Fp8LinearMethod
-from vllm.model_executor.layers.quantization.utils.fp8_utils import (
-    apply_fp8_linear_generic, current_platform_fp8_dtype, is_fp8)
-from vllm.model_executor.layers.quantization.utils.quant_utils import (
-    scaled_quantize)
+                                               RowParallelLinear)
 from vllm.model_executor.layers.rotary_embedding import (
     DeepseekScalingRotaryEmbedding, RotaryEmbedding)
 
@@ -44,13 +35,74 @@ class MLACommonMetadata(AttentionMetadata):
     input_positions: torch.Tensor
 
 
+@triton.jit
+def weight_dequant_kernel(x_ptr, s_ptr, y_ptr, M, N, BLOCK_SIZE: tl.constexpr):
+    """
+    Code from deepseek https://github.com/deepseek-ai/DeepSeek-V3/blob/b5d872ead062c94b852d75ce41ae0b10fcfa1c86/inference/kernel.py#L56
+    Dequantizes weights using the provided scaling factors and stores the result.
+
+    Args:
+        x_ptr (tl.pointer): Pointer to the quantized weights.
+        s_ptr (tl.pointer): Pointer to the scaling factors.
+        y_ptr (tl.pointer): Pointer to the output buffer for dequantized weights.
+        M (int): Number of rows in the weight matrix.
+        N (int): Number of columns in the weight matrix.
+        BLOCK_SIZE (tl.constexpr): Size of the block for tiling.
+
+    Returns:
+        None
+    """
+    pid_m = tl.program_id(axis=0)
+    pid_n = tl.program_id(axis=1)
+    n = tl.cdiv(N, BLOCK_SIZE)
+    offs_m = pid_m * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    offs_n = pid_n * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    offs = offs_m[:, None] * N + offs_n[None, :]
+    mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
+    x = tl.load(x_ptr + offs, mask=mask).to(tl.float32)
+    s = tl.load(s_ptr + pid_m * n + pid_n)
+    y = x * s
+    tl.store(y_ptr + offs, y, mask=mask)
+
+
+def weight_dequant(x: torch.Tensor, s: torch.Tensor, block_size: int = 128) -> torch.Tensor:
+    """
+    Code from deepseek https://github.com/deepseek-ai/DeepSeek-V3/blob/b5d872ead062c94b852d75ce41ae0b10fcfa1c86/inference/kernel.py#L56
+    Dequantizes the given weight tensor using the provided scale tensor.
+
+    Args:
+        x (torch.Tensor): The quantized weight tensor of shape (M, N).
+        s (torch.Tensor): The scale tensor of shape (M, N).
+        block_size (int, optional): The block size to use for dequantization. Defaults to 128.
+
+    Returns:
+        torch.Tensor: The dequantized weight tensor of the same shape as `x`.
+
+    Raises:
+        AssertionError: If `x` or `s` are not contiguous or if their dimensions are not 2.
+    """
+    assert x.is_contiguous() and s.is_contiguous()
+    assert x.dim() == 2 and s.dim() == 2
+    M, N = x.size()
+    y = torch.empty_like(x, dtype=torch.get_default_dtype())
+    grid = lambda meta: (triton.cdiv(M, meta['BLOCK_SIZE']), triton.cdiv(N, meta['BLOCK_SIZE']))
+    weight_dequant_kernel[grid](x, s, y, M, N, BLOCK_SIZE=block_size)
+    return y
+
+
+def dequantize_fp8(fp8_layer) -> torch.Tensor:
+    if not hasattr(fp8_layer, "weight_scale_inv") or fp8_layer.weight_scale_inv is None:
+        return fp8_layer.weight
+    return weight_dequant(fp8_layer.weight, fp8_layer.weight_scale_inv)
+
+
 class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
     """
-    Common class for implementing repeated parts
-
+    Common class for implementing repeated parts 
+    
     Main reference: DeepseekV2 paper, and FlashInfer Implementation
     (https://arxiv.org/abs/2405.04434 and https://github.com/flashinfer-ai/flashinfer/pull/551).
-
+    
     Deepseek's MLA attention works the following way:
     * Use a single latent vector to represent the entire KV cache.
     * The attention "simulates" a multi-head attention, while the compute is
@@ -67,7 +119,7 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         * V: V head dim.
         * kv_c: latent/compressed KV
         * q_c: latent/compressed Q
-
+        
         #
         # Outside the MLA attention backend
         #
@@ -76,21 +128,21 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
            kv_c_k_pe (B, Lkv+R).
         2. The kv_c_k_pe is split into kv_c (B, Lkv) and k_pe (B, R). cq
            and kv_c are normalized.
-
+        
         #
         # Inside the MLA attention backend
         #
 
         * if prefill:
-
-        3. The q_c is then projected up into the multi-head version.
-           * q_c goes from (B, Lq) to (B, N, (P+R)), which is split into q_nope
-             (B, N, P) and q_pe (B, N, R).
+        
+        3. The q_c is then projected up into the multi-head version. 
+           * q_c goes from (B, Lq) to (B, N, (P+R)), which is split into q_nope 
+             (B, N, P) and q_pe (B, N, R). 
         4. q_pe, k_pe are then passed through rotary embeddings.
         5. kv_c and k_pe are concatenated and inserted into the cache
-        6. The kv_c is then projected up into the multi-head version.
-           * kv_c goes from (B, Lkv) to (B, N, (P+V)) which has the nope
-             dimensions for K and V, which is split into k_nope (B, N, P)
+        6. The kv_c is then projected up into the multi-head version. 
+           * kv_c goes from (B, Lkv) to (B, N, (P+V)) which has the nope 
+             dimensions for K and V, which is split into k_nope (B, N, P) 
              and v (B, N, V).
         7. q (B, N, (P+R)) and k (B, N, (P+R)) matrices are assembled from
            q_nope, q_pe, k_nope, k_pe.
@@ -133,7 +185,7 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
     From @tsu-bin's calculation, we only want to use the absorption technique
     for decode. The prefill algorithm should still use the up-projected MHA
     for less flops and memory usage.
-
+    
     """
 
     def __init__(
@@ -195,19 +247,8 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
 
     def _v_up_proj_and_o_proj(self, x):
         if envs.VLLM_MLA_PERFORM_MATRIX_ABSORPTION:
-            if is_fp8(self.W_UV_O):
-                output_parallel = apply_fp8_linear_generic(
-                    x.flatten(start_dim=1), self.W_UV_O, self.W_UV_O_scales,
-                    self.reqaunt_input_group_shape,
-                    self.reqaunt_weight_group_shape)
-            else:
-                output_parallel = torch.matmul(x.flatten(start_dim=1),
-                                               self.W_UV_O)
-            if self.tp_size > 1:
-                output = tensor_model_parallel_all_reduce(output_parallel)
-            else:
-                output = output_parallel
-            return output
+            return self.o_proj_absorbed(
+                x.reshape(-1, self.num_heads * self.kv_lora_rank))[0]
         else:
             x = torch.einsum("bnl,lnv->bnv", x, self.W_UV)
             return self.o_proj(x.reshape(-1,
@@ -215,12 +256,6 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
 
     def _q_proj_and_k_up_proj(self, x):
         if envs.VLLM_MLA_PERFORM_MATRIX_ABSORPTION:
-            if is_fp8(self.W_Q_UK):
-                return apply_fp8_linear_generic(
-                    x, self.W_Q_UK, self.W_Q_UK_scales,
-                    self.reqaunt_input_group_shape,
-                    self.reqaunt_weight_group_shape).view(
-                        -1, self.num_heads, self.kv_lora_rank)
             return torch.matmul(x, self.W_Q_UK)\
                 .view(-1, self.num_heads, self.kv_lora_rank)
         else:
@@ -230,71 +265,8 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
                 .view(-1, self.num_heads, self.kv_lora_rank)
 
     def process_weights_after_loading(self, act_dtype: torch.dtype):
-        # TODO(lucas) This is very gross, we need a more wide scale refactor of
-        # all the FP8 code with a more standard way of
-        # defining schemes/group-shapes, we should also potentially force
-        # quant_methods to support a decompress function
-        #
-        # returns input_group_shape, weight_group_shape
-        def get_scale_group_shapes_for_fp8(layer: LinearBase) -> \
-            Tuple[Tuple[int, int], Tuple[int, int]]:
-            if isinstance(layer.quant_method, Fp8LinearMethod):
-                if layer.quant_method.block_quant:
-                    weight_block_size = \
-                        layer.quant_method.quant_config.weight_block_size
-                    # per-token-group (1, X), block-quantized (X, Y)
-                    return (1, weight_block_size[-1]), weight_block_size
-                else:
-                    return (-1, -1), (-1, -1)  # per-tensor, per-tensor
-            elif isinstance(layer.quant_method, CompressedTensorsLinearMethod)\
-                and isinstance(layer.scheme, CompressedTensorsW8A8Fp8):
-                # this is hacky but we always assume the for
-                # CompressedTensorsW8A8Fp8 the input is dynamic per-token
-                # we ignore if it is static-per-tensor since we are going to
-                # requantize after later anyways
-                strategy = layer.scheme.strategy
-                if strategy == QuantizationStrategy.TENSOR:
-                    return (1, -1), (-1, -1)  # per-token, per-tensor
-                elif strategy == QuantizationStrategy.CHANNEL:
-                    return (1, -1), (-1, 1)  # per-token, per-channel
-                else:
-                    raise NotImplementedError(
-                        f"QuantizationStrategy.{strategy} is not supported for "
-                        "fp8 MLA, please run with VLLM_MLA_DISABLE=1")
-            else:
-                raise NotImplementedError(
-                    "Can't determine scale group shapes for "
-                    f"{layer.quant_method}, please run with VLLM_MLA_DISABLE=1"
-                )
+        kv_b_proj_weight = dequantize_fp8(self.kv_b_proj).T
 
-        def get_layer_weight(layer):
-            if hasattr(layer, "weight"):
-                return layer.weight
-            elif hasattr(layer, "qweight"):
-                return layer.qweight
-            else:
-                raise AttributeError(
-                    f"Layer '{layer}' has neither weight nor qweight")
-
-        def get_and_maybe_dequant_weights(layer: LinearBase):
-            if not isinstance(layer.quant_method, UnquantizedLinearMethod):
-                # NOTE: This should only be used offline, since it's O(N^3)
-                eye = torch.eye(layer.input_size_per_partition,
-                                dtype=act_dtype,
-                                device=get_layer_weight(layer).device)
-                dequant_weights = layer.quant_method.apply(layer,
-                                                           eye,
-                                                           bias=None)
-                del eye
-                # standardize to (output, input)
-                return dequant_weights.T
-            return layer.weight
-
-        weight_dtype = get_layer_weight(self.kv_b_proj).dtype
-        assert get_layer_weight(self.o_proj).dtype == weight_dtype
-        assert get_layer_weight(self.q_proj).dtype == weight_dtype
-
-        kv_b_proj_weight = get_and_maybe_dequant_weights(self.kv_b_proj).T
         assert kv_b_proj_weight.shape == (
             self.kv_lora_rank,
             self.num_heads * (self.qk_nope_head_dim + self.v_head_dim)), (
@@ -312,35 +284,19 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         W_UK, W_UV = kv_b_proj_weight.split(
             [self.qk_nope_head_dim, self.v_head_dim], dim=-1)
 
-        q_proj_weight = get_and_maybe_dequant_weights(self.q_proj).T\
+        q_proj = dequantize_fp8(self.q_proj).T\
                 .view(-1, self.num_heads, self.qk_head_dim)
 
         # can be W_Q or W_UQ depending q_lora_rank, the former if
         # q_lora_rank is None, the latter otherwise. From the Attention backend
         # perspective though we call these both W_Q and rely on the layer
         # to pass in the correct matrix
-        W_Q = q_proj_weight[..., :self.qk_nope_head_dim]
-        self.W_QR = q_proj_weight[..., self.qk_nope_head_dim:]\
+
+        W_Q = q_proj[..., :self.qk_nope_head_dim]
+        self.W_QR = q_proj[..., self.qk_nope_head_dim:]\
             .flatten(start_dim=1).contiguous()
 
-        # W_QR is small so for simplicity we dont bother requantizing it
-        self.W_QR = self.W_QR.to(act_dtype)
-
         if envs.VLLM_MLA_PERFORM_MATRIX_ABSORPTION:
-            requantization_enabled = not envs.VLLM_MLA_DISABLE_REQUANTIZATION
-            if is_fp8(weight_dtype) and requantization_enabled:
-                # This assumes it wise to requantize using the same group shapes
-                # (i.e. strategy, per-tensor, per-channel, block etc.) that the
-                # weights were originally quantized
-                requant_input_group_shape, requant_weight_group_shape = \
-                    get_scale_group_shapes_for_fp8(self.q_proj)
-                assert (requant_input_group_shape, requant_weight_group_shape)\
-                    == get_scale_group_shapes_for_fp8(self.kv_b_proj)
-                assert (requant_input_group_shape, requant_weight_group_shape)\
-                    == get_scale_group_shapes_for_fp8(self.o_proj)
-                self.reqaunt_input_group_shape = requant_input_group_shape
-                self.reqaunt_weight_group_shape = requant_weight_group_shape
-
             #
             # Perform matrix-absorption following
             #     https://github.com/flashinfer-ai/flashinfer/pull/551
@@ -354,44 +310,25 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
             # latter otherwise
             # basically if q_lora_rank is none we are absorbing into q_proj
             # instead of UQ
-            W_Q_UK = torch.einsum("qnd,lnd -> qnl", W_Q, W_UK)\
+            self.W_Q_UK = torch.einsum("qnd,lnd -> qnl", W_Q, W_UK)\
                 .flatten(start_dim=1).contiguous()
 
-            if is_fp8(weight_dtype) and requantization_enabled:
-                W_Q_UK, W_Q_UK_scales = scaled_quantize(
-                    W_Q_UK,
-                    self.reqaunt_weight_group_shape,
-                    quant_dtype=current_platform_fp8_dtype)
-                # For FP8 save the transpose so we can use
-                # `apply_w8a8_block_fp8_linear` directly
-                self.W_Q_UK = W_Q_UK.T.contiguous()
-                self.W_Q_UK_scales = W_Q_UK_scales.T.contiguous()
-            else:
-                self.W_Q_UK = W_Q_UK.to(act_dtype)
-
-            W_O = get_and_maybe_dequant_weights(self.o_proj)\
+            W_O = dequantize_fp8(self.o_proj)\
                 .view(-1, self.num_heads, self.v_head_dim)
-            W_UV_O = torch.einsum("lnd,hnd -> nlh", W_UV, W_O)\
+            self.W_UV_O = torch.einsum("lnd,hnd -> nlh", W_UV, W_O)\
                 .flatten(start_dim=0, end_dim=1).contiguous()
 
-            if is_fp8(weight_dtype) and requantization_enabled:
-                W_UV_O, W_UV_O_scales = scaled_quantize(
-                    W_UV_O,
-                    self.reqaunt_weight_group_shape,
-                    quant_dtype=current_platform_fp8_dtype)
-                # For FP8 save the transpose so we can use
-                # `apply_w8a8_block_fp8_linear` directly
-                self.W_UV_O = W_UV_O.T.contiguous()
-                self.W_UV_O_scales = W_UV_O_scales.T.contiguous()
-            else:
-                self.W_UV_O = W_UV_O.to(act_dtype)
+            tp_size = get_tensor_model_parallel_world_size()
+            self.o_proj_absorbed = RowParallelLinear(
+                self.W_UV_O.shape[0] * tp_size,
+                self.W_UV_O.shape[1],
+                bias=False,
+                # TODO(lucas) figure out how to properly forward quant_method
+                #quant_config=self.o_proj.quant_method,
+            )
 
-            self.tp_size = get_tensor_model_parallel_world_size()
+            self.o_proj_absorbed.weight = torch.nn.Parameter(self.W_UV_O.T)
         else:
-            if is_fp8(weight_dtype):
-                raise NotImplementedError(
-                    "Currently fp8 requires matrix absorption")
-
             self.W_UV = W_UV
             self.W_UK = W_UK
             self.W_Q = W_Q.flatten(start_dim=1)
@@ -400,8 +337,9 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
     def _forward_prefill(
         self,
         q: torch.Tensor,
-        kv_c_normed: torch.Tensor,
+        kv_c: torch.Tensor,
         k_pe: torch.Tensor,
+        kv_c_and_k_pe_cache: torch.Tensor,
         attn_metadata: T,
     ) -> torch.Tensor:
         raise NotImplementedError
@@ -433,30 +371,29 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         is_decode = attn_metadata.decode_metadata is not None
         is_prefill = attn_metadata.prefill_metadata is not None
 
-        if (is_decode and is_prefill):
-            raise NotImplementedError(
-                "chunked prefill is not supported for MLAImplBase")
-
         # Restore head dim (for rotary embedding)
         k_pe = k_pe.unsqueeze(1)
         assert hasattr(attn_metadata, "input_positions")
 
+        num_prefill_tokens: int = attn_metadata.num_prefill_tokens
+
         if is_decode:
-            q_nope = self._q_proj_and_k_up_proj(hidden_states_or_q_c)
-            q_pe = torch.matmul(hidden_states_or_q_c, self.W_QR)\
+            decode_q_nope = self._q_proj_and_k_up_proj(
+                hidden_states_or_q_c[num_prefill_tokens:])
+            decode_q_pe = torch.matmul(hidden_states_or_q_c[num_prefill_tokens:], self.W_QR)\
                 .view(-1, self.num_heads, self.qk_rope_head_dim)
-            q_pe, k_pe = self.rotary_emb(attn_metadata.input_positions, q_pe,
-                                         k_pe)
-        else:
-            assert is_prefill
-            q = self.q_proj(hidden_states_or_q_c)[0]\
+            decode_q_pe, k_pe[num_prefill_tokens:] = \
+                self.rotary_emb(attn_metadata.input_positions[num_prefill_tokens:],
+                                decode_q_pe, k_pe[num_prefill_tokens:])
+        if is_prefill:
+            prefill_q = self.q_proj(hidden_states_or_q_c[:num_prefill_tokens])[0]\
                 .view(-1, self.num_heads, self.qk_head_dim)
 
             # TODO(lucas): there must be a nicer way to write this line
-            q[..., self.qk_nope_head_dim:], k_pe = \
+            prefill_q[..., self.qk_nope_head_dim:], k_pe[:num_prefill_tokens] = \
                 self.rotary_emb(
-                    attn_metadata.input_positions,
-                    q[..., self.qk_nope_head_dim:], k_pe)
+                    attn_metadata.input_positions[:num_prefill_tokens],
+                    prefill_q[..., self.qk_nope_head_dim:], k_pe[:num_prefill_tokens])
 
         # write the latent and rope to kv cache
         if kv_cache.numel() > 0:
@@ -468,12 +405,25 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
                 kv_cache_dtype=self.kv_cache_dtype,
                 scale=layer._k_scale,
             )
+        output = torch.empty(attn_metadata.num_prefill_tokens +
+                             attn_metadata.num_decode_tokens,
+                             self.o_proj.output_size,
+                             device=hidden_states_or_q_c.device,
+                             dtype=hidden_states_or_q_c.dtype)
+        # output shape: [2048, 16, 512]
 
-        if attn_metadata.prefill_metadata is not None:
-            return self._forward_prefill(q, k_c_normed, k_pe, attn_metadata)
+        if is_prefill:
+            # forward prefill output shape: [2048, 7168]
+            output[:num_prefill_tokens] = self._forward_prefill(
+                prefill_q, k_c_normed[:num_prefill_tokens].contiguous(),
+                k_pe[:num_prefill_tokens].contiguous(), kv_cache,
+                attn_metadata)
 
-        if attn_metadata.decode_metadata is not None:
-            return self._forward_decode(q_nope, q_pe, kv_cache, attn_metadata)
+        if is_decode:
+            output[num_prefill_tokens:] = self._forward_decode(
+                decode_q_nope, decode_q_pe, kv_cache, attn_metadata)
+
+        return output
 
     # Optional common flash-attn based prefill
     def _forward_prefill_flash(
@@ -483,6 +433,8 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
         k_pe: torch.Tensor,
         seq_start_loc: torch.Tensor,
         max_prefill_seq_len: int,
+        query_start_loc: torch.Tensor,
+        max_query_len: int,
     ) -> torch.Tensor:
 
         kv_nope = self.kv_b_proj(k_c_normed)[0]\
@@ -501,9 +453,9 @@ class MLACommonImpl(MLAAttentionImpl[T], Generic[T]):
             q=q,
             k=k,
             v=v_padded,
-            cu_seqlens_q=seq_start_loc,
+            cu_seqlens_q=query_start_loc,
             cu_seqlens_k=seq_start_loc,
-            max_seqlen_q=max_prefill_seq_len,
+            max_seqlen_q=max_query_len,
             max_seqlen_k=max_prefill_seq_len,
             softmax_scale=self.scale,
             causal=True,
