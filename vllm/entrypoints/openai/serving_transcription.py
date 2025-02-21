@@ -475,6 +475,7 @@ class OpenAIServingTranscription(OpenAIServing):
             async for op in result_generator:
                 result = op
             logger.info(f"Transcription result: {result}")
+            logger.info(f"Request response format: {request.response_format}")
             if request.response_format == "json":
                 return TranscriptionResponse(text=result.outputs[0].text)
             elif request.response_format == "text":
