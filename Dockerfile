@@ -283,6 +283,6 @@ ENTRYPOINT ["./sagemaker-entrypoint.sh"]
 FROM vllm-openai-base AS vllm-openai
 
 COPY triton-3.2.0+git750c1075-cp312-cp312-linux_x86_64.whl .
-RUN pip install triton-3.2.0+git750c1075-cp312-cp312-linux_x86_64.whl
+RUN uv pip install --system triton-3.2.0+git750c1075-cp312-cp312-linux_x86_64.whl
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 #################### OPENAI API SERVER ####################
