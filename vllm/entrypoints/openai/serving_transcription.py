@@ -481,6 +481,7 @@ class OpenAIServingTranscription(OpenAIServing):
             elif request.response_format == "text":
                 return result.outputs[0].text
             elif request.response_format == "verbose_json":
+                logger.info(f"HERE IT COMES")
                 x = TranscriptionResponseVerbose(
                     task="transcription",
                     duration=audio_duration,
