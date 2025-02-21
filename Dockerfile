@@ -252,6 +252,8 @@ ENV HF_HUB_ENABLE_HF_TRANSFER 1
 
 # Copy in the v1 package for testing (it isn't distributed yet)
 COPY vllm/v1 /usr/local/lib/python3.12/dist-packages/vllm/v1
+RUN mkdir -p /root/.cache/vllm
+COPY gpu_p2p_access_cache/* /root/.cache/vllm
 
 # doc requires source code
 # we hide them inside `test_docs/` , so that this source code
