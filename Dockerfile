@@ -233,6 +233,8 @@ COPY examples examples
 COPY requirements/build.txt requirements/build.txt
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install -r requirements/build.txt
+RUN mkdir -p /root/.cache/vllm
+COPY gpu_p2p_access_cache/* /root/.cache/vllm
 
 #################### vLLM installation IMAGE ####################
 
