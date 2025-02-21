@@ -63,6 +63,7 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               TokenizeResponse,
                                               TranscriptionRequest,
                                               TranscriptionResponse,
+                                              TranscriptionResponseVerbose,
                                               UnloadLoraAdapterRequest)
 from vllm.entrypoints.openai.reasoning_parsers import ReasoningParserManager
 # yapf: enable
@@ -548,7 +549,7 @@ async def create_transcriptions(request: Annotated[TranscriptionRequest,
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
 
-    elif isinstance(generator, TranscriptionResponse):
+    elif isinstance(generator, (TranscriptionResponse, TranscriptionResponseVerbose)):
         return JSONResponse(content=generator.model_dump())
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
