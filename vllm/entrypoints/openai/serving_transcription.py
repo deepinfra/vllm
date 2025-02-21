@@ -356,6 +356,49 @@ class OpenAIServingTranscription(OpenAIServing):
             break
         return lang_token
 
+    async def _detect_no_speech(
+        self,
+        audio_data: Tuple[np.ndarray, int],
+        request: TranscriptionRequest,
+        raw_request: Request,
+    ) -> str:
+        """Detects the language of the audio data.
+        Refer: https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/generation_whisper.py#L1520
+        """
+        # TODO language should be optional and can be guessed.
+        # Temporary fix to support audio with unknown languages;
+        # a more robust and general solution will be implemented in the future.
+
+        request_id = f"trsc-dl-{self._base_request_id(raw_request)}"
+        prompt = cast(
+            PromptType,
+            {
+                "encoder_prompt": {
+                    "prompt": "",
+                    "multi_modal_data": {
+                        "audio": audio_data,
+                    },
+                },
+                "decoder_prompt": "<|startoftranscript|>",
+            },
+        )
+        sampling_params = SamplingParams(
+            temperature=0,
+            top_p=1.0,
+            max_tokens=1,
+            allowed_token_ids=[50363],
+        )
+        result_generator = self.engine_client.generate(
+            prompt,
+            sampling_params,
+            request_id,
+        )
+
+        async for result in result_generator:
+            logger.info(f"TEMIRULAN NO SPEECH {result}")
+            break
+        return "None"
+
     async def _preprocess_transcription(
         self, audio_data: bytes, request: TranscriptionRequest, raw_request: Request
     ) -> Tuple[PromptType, float, str]:
@@ -373,6 +416,10 @@ class OpenAIServingTranscription(OpenAIServing):
             )
 
         lang_token = await self._detect_language((y, sr), request, raw_request)
+
+        no_speech_prob = await self._detect_no_speech((y, sr), request, raw_request)
+
+        logger.info(f"TEMIRULAN NO SPEECH PROB {no_speech_prob}")
 
         prompt = {
             "encoder_prompt": {
