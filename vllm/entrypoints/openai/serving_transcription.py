@@ -483,7 +483,7 @@ class OpenAIServingTranscription(OpenAIServing):
             elif request.response_format == "verbose_json":
                 x = TranscriptionResponseVerbose(
                     task="transcription",
-                    audio_duration=audio_duration,
+                    duration=audio_duration,
                     language=trim_lang_token(lang_token),
                     text=result.outputs[0].text,
                 )
