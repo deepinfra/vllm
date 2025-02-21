@@ -379,7 +379,7 @@ class OpenAIServingTranscription(OpenAIServing):
                         "audio": audio_data,
                     },
                 },
-                "decoder_prompt": "<|startoftranscript|>",
+                "decoder_prompt": "",
             },
         )
         sampling_params = SamplingParams(
