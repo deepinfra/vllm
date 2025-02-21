@@ -387,6 +387,8 @@ class OpenAIServingTranscription(OpenAIServing):
             top_p=1.0,
             max_tokens=1,
             allowed_token_ids=[50363],
+            logprobs=0,
+            skip_special_tokens=False,
         )
         result_generator = self.engine_client.generate(
             prompt,
