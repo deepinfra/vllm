@@ -1603,6 +1603,9 @@ class TranscriptionResponseVerbose(OpenAIBaseModel):
     words: Optional[List[TranscriptionWord]] = None
     """Extracted words and their corresponding timestamps."""
 
+    class Config:
+        exclude_none = True
+
     @classmethod
     def from_completion_output(
         cls, audio_duration: float, language: str, completion_output: CompletionOutput) -> "TranscriptionResponseVerbose":
