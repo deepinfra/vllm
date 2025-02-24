@@ -47,12 +47,17 @@ class CompletionOutput:
     def finished(self) -> bool:
         return self.finish_reason is not None
 
+    def logprobs_repr(self):
+        if self.logprobs is None:
+            return "None"
+        return "\n".join(f"\t\t{logprob}" for logprob in self.logprobs)
+
     def __repr__(self) -> str:
         return (f"CompletionOutput(\n\tindex={self.index}, "
                 f"\n\ttext={self.text!r}, "
                 f"\n\ttoken_ids={self.token_ids}, "
                 f"\n\tcumulative_logprob={self.cumulative_logprob}, "
-                f"\n\tlogprobs=\n\t\t{self.logprobs}, "
+                f"\n\tlogprobs=\n[{self.logprobs_repr()}], "
                 f"\n\tfinish_reason={self.finish_reason}, "
                 f"\n\tstop_reason={self.stop_reason})")
 
