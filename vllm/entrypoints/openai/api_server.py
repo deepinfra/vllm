@@ -550,7 +550,7 @@ async def create_transcriptions(request: Annotated[TranscriptionRequest,
                             status_code=generator.code)
 
     elif isinstance(generator, (TranscriptionResponse, TranscriptionResponseVerbose)):
-        return JSONResponse(content=generator.model_dump())
+        return JSONResponse(content=generator.model_dump(exclude_none=True))
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
 
