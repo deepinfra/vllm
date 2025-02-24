@@ -497,7 +497,7 @@ class OpenAIServingTranscription(OpenAIServing):
                 default_max_tokens, default_params
             )
             sampling_params.skip_special_tokens = True
-            sampling_params.logprobs = 2
+            sampling_params.logprobs = 1
             sampling_params.temperature = request.temperature
             sampling_params.bad_words = ["<|notimestamps|>"]
 
