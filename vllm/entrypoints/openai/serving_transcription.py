@@ -493,7 +493,7 @@ class OpenAIServingTranscription(OpenAIServing):
                     {
                         'id': token_id,
                         'is_timestamp': is_timestamp_token_id(token_id),
-                        'text': decode_tokens(tokenizer, [token_id])[0],
+                        'text': decode_tokens(tokenizer, [token_id]),
                     } for token_id in completion_output.token_ids
                 ]
                 logger.info(f"HERE IT COMES TOKEN INFOS {token_infos}")
