@@ -29,6 +29,12 @@ void cutlass_scaled_mm_sm90(torch::Tensor& c, torch::Tensor const& a,
                             torch::Tensor const& a_scales,
                             torch::Tensor const& b_scales,
                             std::optional<torch::Tensor> const& bias);
+
+void cutlass_scaled_mm_sm100(torch::Tensor& c, torch::Tensor const& a,
+                            torch::Tensor const& b,
+                            torch::Tensor const& a_scales,
+                            torch::Tensor const& b_scales,
+                            std::optional<torch::Tensor> const& bias);
 #endif
 
 void cutlass_scaled_mm_azp_sm75(torch::Tensor& c, torch::Tensor const& a,
@@ -121,7 +127,7 @@ void cutlass_scaled_mm(torch::Tensor& c, torch::Tensor const& a,
   // Guard against compilation issues for sm90 kernels
 #if defined ENABLE_SCALED_MM_C3X && ENABLE_SCALED_MM_C3X
   if (version_num >= 100) {
-    cutlass_scaled_mm_sm89(c, a, b, a_scales, b_scales, bias);
+    cutlass_scaled_mm_sm100(c, a, b, a_scales, b_scales, bias);
     return;
   }
   if (version_num >= 90) {

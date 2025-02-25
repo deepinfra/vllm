@@ -40,7 +40,6 @@ def cutlass_fp8_supported() -> bool:
 
 
 def cutlass_block_fp8_supported() -> bool:
-    return False # HACK FOR BLACKWELL
     if not current_platform.is_cuda():
         return False
 

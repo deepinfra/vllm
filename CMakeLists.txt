@@ -308,7 +308,8 @@ if(VLLM_GPU_LANG STREQUAL "CUDA")
        "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_sm90_fp8.cu"
        "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_sm90_int8.cu"
        "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_azp_sm90_int8.cu"
-       "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_blockwise_sm90_fp8.cu")
+       "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_blockwise_sm90_fp8.cu"
+       "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_blockwise_sm100_fp8.cu")
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
       CUDA_ARCHS "${SCALED_MM_3X_ARCHS}")
