@@ -23,6 +23,7 @@ from vllm.inputs.data import PromptType
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.utils import PlaceholderModule
+from vllm.transformers_utils.tokenizer import decode_tokens
 
 try:
     import librosa
@@ -249,6 +250,10 @@ LANG_ID_TO_LANG_TOKEN = {
 def trim_lang_token(lang_token: str) -> str:
     return lang_token.strip().replace("<|", "").replace("|>", "")
 
+# ONLY FOR Whisper v3
+def is_timestamp_token_id(token_id: int) -> bool:
+    return 50365 <= token_id <= 51865
+
 # As per https://platform.openai.com/docs/guides/speech-to-text#overview.
 # TODO configurable
 MAX_AUDIO_CLIP_FILESIZE_MB = 25
@@ -356,51 +361,6 @@ class OpenAIServingTranscription(OpenAIServing):
             break
         return lang_token
 
-    async def _detect_no_speech(
-        self,
-        audio_data: Tuple[np.ndarray, int],
-        request: TranscriptionRequest,
-        raw_request: Request,
-    ) -> str:
-        """Detects the language of the audio data.
-        Refer: https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/generation_whisper.py#L1520
-        """
-        # TODO language should be optional and can be guessed.
-        # Temporary fix to support audio with unknown languages;
-        # a more robust and general solution will be implemented in the future.
-
-        request_id = f"trsc-dl-{self._base_request_id(raw_request)}"
-        prompt = cast(
-            PromptType,
-            {
-                "encoder_prompt": {
-                    "prompt": "",
-                    "multi_modal_data": {
-                        "audio": audio_data,
-                    },
-                },
-                "decoder_prompt": "",
-            },
-        )
-        sampling_params = SamplingParams(
-            temperature=0,
-            top_p=1.0,
-            max_tokens=1,
-            allowed_token_ids=[50363],
-            logprobs=0,
-            skip_special_tokens=False,
-        )
-        result_generator = self.engine_client.generate(
-            prompt,
-            sampling_params,
-            request_id,
-        )
-
-        async for result in result_generator:
-            logger.info(f"TEMIRULAN NO SPEECH {result}")
-            break
-        return "None"
-
     async def _preprocess_transcription(
         self, audio_data: bytes, request: TranscriptionRequest, raw_request: Request
     ) -> Tuple[PromptType, float, str]:
@@ -418,10 +378,6 @@ class OpenAIServingTranscription(OpenAIServing):
             )
 
         lang_token = await self._detect_language((y, sr), request, raw_request)
-
-        no_speech_prob = await self._detect_no_speech((y, sr), request, raw_request)
-
-        logger.info(f"TEMIRULAN NO SPEECH PROB {no_speech_prob}")
 
         prompt = {
             "encoder_prompt": {
@@ -444,6 +400,7 @@ class OpenAIServingTranscription(OpenAIServing):
         See https://platform.openai.com/docs/api-reference/audio/createTranscription
         for the API specification. This API mimics the OpenAI transcription API.
         """
+        self.return_tokens_as_token_ids
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
             return error_check_ret
@@ -490,7 +447,6 @@ class OpenAIServingTranscription(OpenAIServing):
 
         result_generator: Optional[AsyncGenerator[RequestOutput, None]] = None
         try:
-            # TODO(rob): subtract len of tokenized prompt.
             default_max_tokens = self.model_config.max_model_len
             default_params = self.model_config.get_diff_sampling_param()
             sampling_params = request.to_sampling_params(
@@ -531,6 +487,16 @@ class OpenAIServingTranscription(OpenAIServing):
                 return result.outputs[0].text
             elif request.response_format == "verbose_json":
                 logger.info(f"HERE IT COMES")
+                completion_output = request.outputs[0]
+                tokenizer = self.engine_client.get_tokenizer()
+                token_infos = [
+                    {
+                        'id': token_id,
+                        'is_timestamp': is_timestamp_token_id(token_id),
+                        'text': decode_tokens(tokenizer, [token_id])[0],
+                    } for token_id in completion_output.token_ids
+                ]
+                logger.info(f"HERE IT COMES TOKEN INFOS {token_infos}")
                 x = TranscriptionResponseVerbose(
                     task="transcription",
                     duration=audio_duration,
