@@ -8,6 +8,8 @@ from argparse import Namespace
 from typing import Any, ClassVar, Dict, List, Literal, Optional, Set, Union
 
 import torch
+import zlib
+
 from fastapi import UploadFile
 from pydantic import (BaseModel, ConfigDict, Field, TypeAdapter,
                       ValidationInfo, field_validator, model_validator)
@@ -1627,5 +1629,5 @@ class TranscriptionResponseVerbose(OpenAIBaseModel):
             tokens=tokens,
             seek=0,
             temperature=temperature,
-            compression_ratio=0,
+            compression_ratio=len(text)/(1.0 * len(zlib.compress(text.encode("utf-8")))),
             no_speech_prob=0))
