@@ -509,11 +509,12 @@ class OpenAIServingTranscription(OpenAIServing):
                             segment_end = timestamp_token_id_to_timestamp(token_id)
                             current_segment_text = decode_tokens(tokenizer, current_segment_token_ids, skip_special_tokens=True)
                             response.add_segment(
-                                avg_logprob=np.mean(current_segment_logprobs),
+                                avg_logprob=float(np.mean(current_segment_logprobs)),
                                 start=segment_start,
                                 end=segment_end,
                                 text=current_segment_text,
                                 tokens=current_segment_token_ids,
+                                temperature=request.temperature,
                             )
                             segment_start, segment_end, current_segment_text, current_segment_logprobs, current_segment_token_ids = None, None, "", [], []
                     elif token_id == 50257:
