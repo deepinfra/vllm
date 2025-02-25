@@ -502,6 +502,11 @@ class OpenAIServingTranscription(OpenAIServing):
                 current_segment_logprobs = []
                 logprobs_ptr = 0
                 for token_id in completion_output.token_ids:
+                    if token_id == 50257:
+                        break
+                    current_segment_token_ids.append(token_id)
+                    current_segment_logprobs.append(completion_output.logprobs[logprobs_ptr][token_id].logprob)
+                    logprobs_ptr += 1
                     if is_timestamp_token_id(token_id):
                         if segment_start is None:
                             segment_start = timestamp_token_id_to_timestamp(token_id)
@@ -517,12 +522,6 @@ class OpenAIServingTranscription(OpenAIServing):
                                 temperature=request.temperature,
                             )
                             segment_start, segment_end, current_segment_text, current_segment_logprobs, current_segment_token_ids = None, None, "", [], []
-                    elif token_id == 50257:
-                        break
-                    else:
-                        current_segment_token_ids.append(token_id)
-                        current_segment_logprobs.append(completion_output.logprobs[logprobs_ptr][token_id].logprob)
-                    logprobs_ptr += 1
                 logger.info(f"TEMIRULAN {response}")
                 return response
             else:
