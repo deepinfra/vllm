@@ -983,7 +983,6 @@ if __name__ == "__main__":
     # NOTE(simon):
     # This section should be in sync with vllm/entrypoints/cli/main.py for CLI
     # entrypoints.
-    print("TEMIRULAN  " * 1000)
     parser = FlexibleArgumentParser(
         description="vLLM OpenAI-Compatible RESTful API server.")
     parser = make_arg_parser(parser)
