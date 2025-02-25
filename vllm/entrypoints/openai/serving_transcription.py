@@ -254,6 +254,9 @@ def trim_lang_token(lang_token: str) -> str:
 def is_timestamp_token_id(token_id: int) -> bool:
     return 50365 <= token_id <= 51865
 
+def timestamp_token_id_to_timestamp(token_id: int) -> float:
+    return (token_id - 50365) * 0.02
+
 # As per https://platform.openai.com/docs/guides/speech-to-text#overview.
 # TODO configurable
 MAX_AUDIO_CLIP_FILESIZE_MB = 25
@@ -452,9 +455,7 @@ class OpenAIServingTranscription(OpenAIServing):
             sampling_params = request.to_sampling_params(
                 default_max_tokens, default_params
             )
-            sampling_params.skip_special_tokens = True
             sampling_params.logprobs = 1
-            sampling_params.temperature = request.temperature
             sampling_params.bad_words = ["<|notimestamps|>"]
 
             self._log_inputs(
@@ -489,22 +490,40 @@ class OpenAIServingTranscription(OpenAIServing):
                 logger.info(f"HERE IT COMES")
                 completion_output = result.outputs[0]
                 tokenizer = await self.engine_client.get_tokenizer()
-                token_infos = [
-                    {
-                        'id': token_id,
-                        'is_timestamp': is_timestamp_token_id(token_id),
-                        'text': decode_tokens(tokenizer, [token_id]),
-                    } for token_id in completion_output.token_ids
-                ]
-                logger.info(f"HERE IT COMES TOKEN INFOS {token_infos}")
-                x = TranscriptionResponseVerbose(
+                response = TranscriptionResponseVerbose(
                     task="transcription",
                     duration=audio_duration,
                     language=trim_lang_token(lang_token),
-                    text=result.outputs[0].text,
+                    text=decode_tokens(tokenizer, list(completion_output.token_ids), skip_special_tokens=True),
                 )
-                logger.info(f"TEMIRULAN {x}")
-                return x
+                segment_start, segment_end = None, None
+                current_segment_text = ""
+                current_segment_token_ids = []
+                current_segment_logprobs = []
+                logprobs_ptr = 0
+                for token_id in completion_output.token_ids:
+                    if is_timestamp_token_id(token_id):
+                        if segment_start is None:
+                            segment_start = timestamp_token_id_to_timestamp(token_id)
+                        else:
+                            segment_end = timestamp_token_id_to_timestamp(token_id)
+                            current_segment_text = decode_tokens(tokenizer, current_segment_token_ids, skip_special_tokens=True)
+                            response.add_segment(
+                                avg_logprob=np.mean(current_segment_logprobs),
+                                start=segment_start,
+                                end=segment_end,
+                                text=current_segment_text,
+                                tokens=current_segment_token_ids,
+                            )
+                            segment_start, segment_end, current_segment_text, current_segment_logprobs, current_segment_token_ids = None, None, "", [], []
+                    elif token_id == 50257:
+                        break
+                    else:
+                        current_segment_token_ids.append(token_id)
+                        current_segment_logprobs.append(completion_output.logprobs[logprobs_ptr][token_id].logprob)
+                    logprobs_ptr += 1
+                logger.info(f"TEMIRULAN {response}")
+                return response
             else:
                 return self.create_error_response(
                     "Currently only support response_format `text`, `verbose_json` or `json`"

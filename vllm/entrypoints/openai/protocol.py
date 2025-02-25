@@ -1614,3 +1614,18 @@ class TranscriptionResponseVerbose(OpenAIBaseModel):
             duration=audio_duration,
             language=language,
             text=completion_output.text)
+
+    def add_segment(self, avg_logprob: float, start: float, end: float, text: str, tokens: List[int], temperature: float) -> None:
+        if self.segments is None:
+            self.segments = []
+        self.segments.append(TranscriptionSegment(
+            id=len(self.segments),
+            avg_logprob=avg_logprob,
+            start=start,
+            end=end,
+            text=text,
+            tokens=tokens,
+            seek=0,
+            temperature=temperature,
+            compression_ratio=0,
+            no_speech_prob=0))
