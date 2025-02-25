@@ -1608,15 +1608,6 @@ class TranscriptionResponseVerbose(OpenAIBaseModel):
     class Config:
         exclude_none = True
 
-    @classmethod
-    def from_completion_output(
-        cls, audio_duration: float, language: str, completion_output: CompletionOutput) -> "TranscriptionResponseVerbose":
-        return cls(
-            task="transcribe",
-            duration=audio_duration,
-            language=language,
-            text=completion_output.text)
-
     def add_segment(self, avg_logprob: float, start: float, end: float, text: str, tokens: List[int], temperature: float) -> None:
         if self.segments is None:
             self.segments = []

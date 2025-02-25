@@ -541,7 +541,6 @@ async def create_transcriptions(request: Annotated[TranscriptionRequest,
             message="The model does not support Transcriptions API")
 
     audio_data = await request.file.read()
-    logger.info(f"Transcription audio_data: {len(audio_data)} bytes")
     generator = await handler.create_transcription(audio_data, request,
                                                    raw_request)
 

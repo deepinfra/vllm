@@ -480,14 +480,11 @@ class OpenAIServingTranscription(OpenAIServing):
         try:
             async for op in result_generator:
                 result = op
-            logger.info(f"Transcription result: {result}")
-            logger.info(f"Request response format: {request.response_format}")
             if request.response_format == "json":
                 return TranscriptionResponse(text=result.outputs[0].text)
             elif request.response_format == "text":
                 return result.outputs[0].text
             elif request.response_format == "verbose_json":
-                logger.info(f"HERE IT COMES")
                 completion_output = result.outputs[0]
                 tokenizer = await self.engine_client.get_tokenizer()
                 response = TranscriptionResponseVerbose(
@@ -522,7 +519,6 @@ class OpenAIServingTranscription(OpenAIServing):
                                 temperature=request.temperature,
                             )
                             segment_start, segment_end, current_segment_text, current_segment_logprobs, current_segment_token_ids = None, None, "", [], []
-                logger.info(f"TEMIRULAN {response}")
                 return response
             else:
                 return self.create_error_response(

@@ -47,9 +47,6 @@ class Logprob:
     rank: Optional[int] = None
     decoded_token: Optional[str] = None
 
-    def __repr__(self):
-        return f"L({round(self.logprob, 2)}, {self.rank}, '{self.decoded_token}')"
-
 
 # {token_id -> logprob} per each sequence group. None if the corresponding
 # sequence group doesn't require prompt logprob.

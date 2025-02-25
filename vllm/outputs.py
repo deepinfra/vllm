@@ -47,19 +47,14 @@ class CompletionOutput:
     def finished(self) -> bool:
         return self.finish_reason is not None
 
-    def logprobs_repr(self):
-        if self.logprobs is None:
-            return "None"
-        return "\n".join(f"\t\t{logprob}" for logprob in self.logprobs)
-
     def __repr__(self) -> str:
-        return (f"CompletionOutput(\n\tindex={self.index}, "
-                f"\n\ttext={self.text!r}, "
-                f"\n\ttoken_ids={self.token_ids}, "
-                f"\n\tcumulative_logprob={self.cumulative_logprob}, "
-                f"\n\tlogprobs=\n[{self.logprobs_repr()}], "
-                f"\n\tfinish_reason={self.finish_reason}, "
-                f"\n\tstop_reason={self.stop_reason})")
+        return (f"CompletionOutput(index={self.index}, "
+                f"text={self.text!r}, "
+                f"token_ids={self.token_ids}, "
+                f"cumulative_logprob={self.cumulative_logprob}, "
+                f"logprobs={self.logprobs}, "
+                f"finish_reason={self.finish_reason}, "
+                f"stop_reason={self.stop_reason})")
 
 
 @dataclass
@@ -344,19 +339,18 @@ class RequestOutput:
         return request_output
 
     def __repr__(self) -> str:
-        return (f"RequestOutput(\n\trequest_id={self.request_id}, "
-                f"\n\tprompt={self.prompt!r}, "
-                f"\n\tprompt_token_ids={self.prompt_token_ids}, "
-                f"\n\tencoder_prompt={self.encoder_prompt!r}, "
-                # f"encoder_prompt_token_ids={self.encoder_prompt_token_ids}, "
-                f"\n\tprompt_logprobs={self.prompt_logprobs}, "
-                f"\n\toutputs=\n{self.outputs}, "
-                f"\n\tfinished={self.finished}, "
-                # f"metrics={self.metrics}, "
-                # f"lora_request={self.lora_request}, "
-                # f"\n\tnum_cached_tokens={self.num_cached_tokens}, "
-                # f"multi_modal_placeholders={self.multi_modal_placeholders})")
-                )
+        return (f"RequestOutput(request_id={self.request_id}, "
+                f"prompt={self.prompt!r}, "
+                f"prompt_token_ids={self.prompt_token_ids}, "
+                f"encoder_prompt={self.encoder_prompt!r}, "
+                f"encoder_prompt_token_ids={self.encoder_prompt_token_ids}, "
+                f"prompt_logprobs={self.prompt_logprobs}, "
+                f"outputs={self.outputs}, "
+                f"finished={self.finished}, "
+                f"metrics={self.metrics}, "
+                f"lora_request={self.lora_request}, "
+                f"num_cached_tokens={self.num_cached_tokens}, "
+                f"multi_modal_placeholders={self.multi_modal_placeholders})")
 
 
 _O = TypeVar("_O", default=PoolingOutput)
