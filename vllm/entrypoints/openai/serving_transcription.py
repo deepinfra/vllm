@@ -487,7 +487,7 @@ class OpenAIServingTranscription(OpenAIServing):
                 return result.outputs[0].text
             elif request.response_format == "verbose_json":
                 logger.info(f"HERE IT COMES")
-                completion_output = request.outputs[0]
+                completion_output = result.outputs[0]
                 tokenizer = self.engine_client.get_tokenizer()
                 token_infos = [
                     {
