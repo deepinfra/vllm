@@ -488,7 +488,7 @@ class OpenAIServingTranscription(OpenAIServing):
                 completion_output = result.outputs[0]
                 tokenizer = await self.engine_client.get_tokenizer()
                 response = TranscriptionResponseVerbose(
-                    task="transcription",
+                    task="transcribe",
                     duration=audio_duration,
                     language=trim_lang_token(lang_token),
                     text=decode_tokens(tokenizer, list(completion_output.token_ids), skip_special_tokens=True),
