@@ -403,7 +403,6 @@ class OpenAIServingTranscription(OpenAIServing):
         See https://platform.openai.com/docs/api-reference/audio/createTranscription
         for the API specification. This API mimics the OpenAI transcription API.
         """
-        self.return_tokens_as_token_ids
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
             return error_check_ret
@@ -465,6 +464,7 @@ class OpenAIServingTranscription(OpenAIServing):
                 lora_request=None,
                 prompt_adapter_request=None,
             )
+            logger.info(f"request_id: {request_id} lang:{request.language} prompt:{request.prompt} model:{request.model} response_format:{request.response_format} temperature:{request.temperature} timestamp_granularity:{request.timestamp_granularities}")
 
             result_generator = self.engine_client.generate(
                 prompt,
@@ -486,6 +486,7 @@ class OpenAIServingTranscription(OpenAIServing):
                 return result.outputs[0].text
             elif request.response_format == "verbose_json":
                 completion_output = result.outputs[0]
+                logger.info(f"request_id: {request_id} completion_output: {completion_output}")
                 tokenizer = await self.engine_client.get_tokenizer()
                 response = TranscriptionResponseVerbose(
                     task="transcribe",
