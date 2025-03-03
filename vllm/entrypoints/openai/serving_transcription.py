@@ -263,6 +263,50 @@ MAX_AUDIO_CLIP_FILESIZE_MB = 25
 # TODO get from processor.feature_extractor.chunk_length
 MAX_AUDIO_CLIP_DURATION_S = 30
 
+import unicodedata
+
+def preprocess(text):
+    # Keep only letters from any language and lowercase them
+    return ''.join(
+        c.lower() for c in text
+        if unicodedata.category(c).startswith('L')
+    )
+
+def levenshtein_distance(s1, s2):
+    m, n = len(s1), len(s2)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+
+    for i in range(m + 1):
+        dp[i][0] = i
+    for j in range(n + 1):
+        dp[0][j] = j
+
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if s1[i - 1] == s2[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1]
+            else:
+                dp[i][j] = 1 + min(
+                    dp[i - 1][j],    # deletion
+                    dp[i][j - 1],    # insertion
+                    dp[i - 1][j - 1] # substitution
+                )
+    return dp[m][n]
+
+def wer(reference, hypothesis):
+    ref_processed = preprocess(reference)
+    hyp_processed = preprocess(hypothesis)
+    distance = levenshtein_distance(ref_processed, hyp_processed)
+    return distance / max(len(ref_processed), 1)  # avoid division by zero
+
+def log_wer(reference, hypothesis):
+    wer_score = wer(reference, hypothesis)
+    if wer_score < 0.01: wer_label = "PERFECT"
+    elif wer_score < 0.1: wer_label = "GOOD"
+    elif wer_score < 0.2: wer_label = "FAIR"
+    elif wer_score < 0.5: wer_label = "POOR"
+    else: wer_label = "BAD"
+    logger.info(f"WER ({wer_label}): {wer_score:.2f}")
 
 class OpenAIServingTranscription(OpenAIServing):
 
@@ -478,6 +522,9 @@ class OpenAIServingTranscription(OpenAIServing):
         # TODO(rob): figure out a way to pipe streaming in.
         # Non-streaming response.
         try:
+            original_text = request.original_text
+            if original_text:
+                log_wer(original_text, result.outputs[0].text)
             async for op in result_generator:
                 result = op
             if request.response_format == "json":
