@@ -305,11 +305,11 @@ if(VLLM_GPU_LANG STREQUAL "CUDA")
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.0 AND SCALED_MM_3X_ARCHS)
     set(SRCS 
        "csrc/quantization/cutlass_w8a8/scaled_mm_c3x.cu"
-       "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_sm90_fp8.cu"
-       "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_sm90_int8.cu"
-       "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_azp_sm90_int8.cu"
-       "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_blockwise_sm90_fp8.cu"
-       "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_blockwise_sm100_fp8.cu")
+       #"csrc/quantization/cutlass_w8a8/c3x/scaled_mm_sm90_fp8.cu"
+       #"csrc/quantization/cutlass_w8a8/c3x/scaled_mm_sm90_int8.cu"
+       #"csrc/quantization/cutlass_w8a8/c3x/scaled_mm_azp_sm90_int8.cu"
+       #"csrc/quantization/cutlass_w8a8/c3x/scaled_mm_blockwise_sm90_fp8.cu"
+    )
     set_gencode_flags_for_srcs(
       SRCS "${SRCS}"
       CUDA_ARCHS "${SCALED_MM_3X_ARCHS}")
@@ -362,24 +362,24 @@ if(VLLM_GPU_LANG STREQUAL "CUDA")
 
   # The 2:4 sparse kernels cutlass_scaled_sparse_mm and cutlass_compressor
   # require CUDA 12.2 or later (and only work on Hopper and Blackwell).
-  if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.2 AND SCALED_MM_3X_ARCHS)
-    set(SRCS "csrc/sparse/cutlass/sparse_scaled_mm_c3x.cu")
-    set_gencode_flags_for_srcs(
-      SRCS "${SRCS}"
-      CUDA_ARCHS "${SCALED_MM_3X_ARCHS}")
-    list(APPEND VLLM_EXT_SRC "${SRCS}")
-    list(APPEND VLLM_GPU_FLAGS "-DENABLE_SPARSE_SCALED_MM_C3X=1")
-    message(STATUS "Building sparse_scaled_mm_c3x for archs: ${SCALED_MM_3X_ARCHS}")
-  else()
-    if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.2 AND SCALED_MM_3X_ARCHS)
-      message(STATUS "Not building sparse_scaled_mm_c3x kernels as CUDA Compiler version is "
-                     "not >= 12.2, we recommend upgrading to CUDA 12.2 or later "
-                     "if you intend on running FP8 sparse quantized models on Hopper.")
-    else()
-      message(STATUS "Not building sparse_scaled_mm_c3x as no compatible archs found "
-                     "in CUDA target architectures")
-    endif()
-  endif()
+  # if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.2 AND SCALED_MM_3X_ARCHS)
+  #   set(SRCS "csrc/sparse/cutlass/sparse_scaled_mm_c3x.cu")
+  #   set_gencode_flags_for_srcs(
+  #     SRCS "${SRCS}"
+  #     CUDA_ARCHS "${SCALED_MM_3X_ARCHS}")
+  #   list(APPEND VLLM_EXT_SRC "${SRCS}")
+  #   list(APPEND VLLM_GPU_FLAGS "-DENABLE_SPARSE_SCALED_MM_C3X=1")
+  #   message(STATUS "Building sparse_scaled_mm_c3x for archs: ${SCALED_MM_3X_ARCHS}")
+  # else()
+  #   if (NOT ${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.2 AND SCALED_MM_3X_ARCHS)
+  #     message(STATUS "Not building sparse_scaled_mm_c3x kernels as CUDA Compiler version is "
+  #                    "not >= 12.2, we recommend upgrading to CUDA 12.2 or later "
+  #                    "if you intend on running FP8 sparse quantized models on Hopper.")
+  #   else()
+  #     message(STATUS "Not building sparse_scaled_mm_c3x as no compatible archs found "
+  #                    "in CUDA target architectures")
+  #   endif()
+  # endif()
 
   # FP4 Archs and flags
   cuda_archs_loose_intersection(FP4_ARCHS "10.0a" "${CUDA_ARCHS}")
@@ -404,6 +404,7 @@ if(VLLM_GPU_LANG STREQUAL "CUDA")
   if(${CMAKE_CUDA_COMPILER_VERSION} VERSION_GREATER 12.8 AND BLACKWELL_ARCHS)
     set(SRCS 
       "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_sm100_fp8.cu"
+      "csrc/quantization/cutlass_w8a8/c3x/scaled_mm_blockwise_sm100_fp8.cu"
     )
     list(APPEND VLLM_EXT_SRC "${SRCS}")
     message(STATUS "Building FP8 for archs: ${BLACKWELL_ARCHS}")
