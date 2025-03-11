@@ -1407,7 +1407,12 @@ class MllamaForConditionalGeneration(nn.Module, SupportsMultiModal,
             ]
             for actual_len, last_group_len in zip(
                     actual_encoder_seq_lens, attn_metadata.encoder_seq_lens):
-                assert actual_len >= last_group_len
+                assert actual_len >= last_group_len, \
+                    (f"actual_len: {actual_encoder_seq_lens}, "
+                     f"last_group_len: {attn_metadata.encoder_seq_lens}, "
+                     f"num_tiles: {num_tiles}, "
+                     f"num_tokens_per_tile: {num_tokens_per_tile}, "
+                     f"image_size: {self.image_size}")
 
             cross_attention_states = self.get_cross_attention_states(
                 image_inputs, attn_metadata, actual_encoder_seq_lens)
