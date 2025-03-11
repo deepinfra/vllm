@@ -526,20 +526,23 @@ class OpenAIServingTranscription(OpenAIServing):
         # Non-streaming response.
         try:
             assert result_generator is not None
+            result = None
             async for op in result_generator:
                 result = op
+            assert isinstance(result, RequestOutput)
+            tokenizer = await self.engine_client.get_tokenizer()
+            completion_output = result.outputs[0]
+            text = decode_tokens(tokenizer, list(completion_output.token_ids), skip_special_tokens=True).strip()
             if request.response_format == "json":
-                return TranscriptionResponse(text=result.outputs[0].text)
+                return TranscriptionResponse(text=text)
             elif request.response_format == "text":
-                return result.outputs[0].text
+                return text
             elif request.response_format == "verbose_json":
-                completion_output = result.outputs[0]
-                tokenizer = await self.engine_client.get_tokenizer()
                 response = TranscriptionResponseVerbose(
                     task="transcribe",
                     duration=duration_s,
                     language=trim_lang_token(lang_token),
-                    text=decode_tokens(tokenizer, list(completion_output.token_ids), skip_special_tokens=True),
+                    text=text,
                 )
                 segment_start, segment_end = None, None
                 current_segment_text = ""
