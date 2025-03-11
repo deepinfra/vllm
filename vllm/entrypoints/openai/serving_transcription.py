@@ -6,6 +6,7 @@ import re
 import time
 from collections.abc import AsyncGenerator
 from math import ceil
+from pydub import AudioSegment
 from typing import Final, Optional, Union, cast
 
 from fastapi import Request
@@ -255,16 +256,52 @@ MAX_AUDIO_CLIP_FILESIZE_MB = 25
 def trim_lang_token(lang_token: str) -> str:
     return lang_token.strip().replace("<|", "").replace("|>", "")
 
+
 # ONLY FOR Whisper v3
 def is_timestamp_token_id(token_id: int) -> bool:
     return 50365 <= token_id <= 51865
 
+
 def timestamp_token_id_to_timestamp(token_id: int) -> float:
+
     return (token_id - 50365) * 0.02
+
 
 def remove_timestamps(text: str) -> str:
     pattern = r'<\|\s*[+-]?\d*\.?\d+\s*\|>'
     return re.sub(pattern, '', text)
+
+
+def load_with_librosa(audio_data: bytes) -> tuple[np.ndarray, int]:
+    with io.BytesIO(audio_data) as audio_bytes:
+        return librosa.load(audio_bytes, sr=None)
+
+
+def load_with_audio_segment(audio_data: bytes) -> tuple[np.ndarray, int]:
+    with io.BytesIO(audio_data) as audio_stream:
+        audio_segment = AudioSegment.from_file(audio_stream)
+    with io.BytesIO() as wav_io:
+        audio_segment.export(wav_io, format="wav")
+        wav_io.seek(0)
+        return librosa.load(wav_io, sr=None)
+
+
+def load_audio(audio_data: bytes, request_id: str) -> tuple[np.ndarray | None, int | None]:
+    logger.info(f"{request_id} - Starting audio loading into numpy.")
+    loaders = [
+        ("librosa", load_with_librosa),
+        ("audio_segment", load_with_audio_segment),
+    ]
+    for name, loader in loaders:
+        try:
+            result = loader(audio_data)
+            logger.info(f"{request_id} - Audio loaded successfully using {name}.")
+            return result
+        except Exception as e:
+            logger.warning(f"{request_id} - {name} loader failed: {e}")
+
+    logger.error(f"{request_id} - All audio loading methods failed.")
+    return None, None
 
 
 class OpenAIServingTranscription(OpenAIServing):
@@ -323,6 +360,7 @@ class OpenAIServingTranscription(OpenAIServing):
             return f"<|{request.language}|>"
 
         default_lang_token = "<|en|>"
+        request_id = f"trsc-lang-{self._base_request_id(raw_request)}"
 
         # TODO: this mappping should be dynamice mapping once vllm core supports language dictionary
         if (
@@ -333,7 +371,6 @@ class OpenAIServingTranscription(OpenAIServing):
         else:
             return default_lang_token
 
-        request_id = f"trsc-dl-{self._base_request_id(raw_request)}"
         prompt = cast(
             PromptType,
             {
@@ -371,15 +408,20 @@ class OpenAIServingTranscription(OpenAIServing):
         request: TranscriptionRequest,
         audio_data: bytes,
         raw_request: Request,
+        request_id: str,
     ) -> tuple[PromptType, float, str]:
 
-        if len(audio_data) / 1024**2 > MAX_AUDIO_CLIP_FILESIZE_MB:
-            raise ValueError("Maximum file size exceeded.")
+        y, sr = load_audio(audio_data, request_id)
 
-        with io.BytesIO(audio_data) as bytes_:
-            y, sr = librosa.load(bytes_)
+        if y is None:
+            logger.info(f"{request_id} failed to load audio, y={y}, sr={sr}")
+            raise ValueError(f"{request_id} Failed to load audio")
+
+        assert isinstance(y, np.ndarray)
+        assert isinstance(sr, int)
 
         duration = librosa.get_duration(y=y, sr=sr)
+
         if duration > self.max_audio_clip_s:
             raise ValueError(
                 f"Maximum clip duration ({self.max_audio_clip_s}s) "
@@ -405,11 +447,6 @@ class OpenAIServingTranscription(OpenAIServing):
         raw_request: Request
     ) -> Union[TranscriptionResponse, TranscriptionResponseVerbose, AsyncGenerator[str, None],
                str, ErrorResponse]:
-        """Transcription API similar to OpenAI's API.
-
-        See https://platform.openai.com/docs/api-reference/audio/createTranscription
-        for the API specification. This API mimics the OpenAI transcription API.
-        """
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
             return error_check_ret
@@ -448,6 +485,7 @@ class OpenAIServingTranscription(OpenAIServing):
                 request=request,
                 audio_data=audio_data,
                 raw_request=raw_request,
+                request_id=request_id,
             )
 
         except ValueError as e:
