@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import io
+import numpy as np
+import re
 import time
 from collections.abc import AsyncGenerator
 from math import ceil
@@ -8,12 +10,13 @@ from typing import Final, Optional, Union, cast
 
 from fastapi import Request
 
+from vllm import SamplingParams
 from vllm.config import ModelConfig
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.logger import RequestLogger
 from vllm.entrypoints.openai.protocol import (
     DeltaMessage, ErrorResponse, RequestResponseMetadata, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResponseStreamChoice,
+    TranscriptionResponse, TranscriptionResponseVerbose, TranscriptionResponseStreamChoice,
     TranscriptionStreamResponse, UsageInfo)
 from vllm.entrypoints.openai.serving_engine import OpenAIServing
 from vllm.entrypoints.openai.serving_models import OpenAIServingModels
@@ -21,6 +24,7 @@ from vllm.inputs.data import PromptType
 from vllm.logger import init_logger
 from vllm.outputs import RequestOutput
 from vllm.transformers_utils.processor import cached_get_processor
+from vllm.transformers_utils.tokenizer import decode_tokens
 from vllm.utils import PlaceholderModule
 
 try:
@@ -138,10 +142,129 @@ ISO639_1_OTHER_LANGS = {
     "lb": "Luxembourgish",
     "bo": "Tibetan"
 }
+LANG_ID_TO_LANG_TOKEN = {
+    "whisper-v3": {
+        50259: "<|en|>",
+        50260: "<|zh|>",
+        50261: "<|de|>",
+        50262: "<|es|>",
+        50263: "<|ru|>",
+        50264: "<|ko|>",
+        50265: "<|fr|>",
+        50266: "<|ja|>",
+        50267: "<|pt|>",
+        50268: "<|tr|>",
+        50269: "<|pl|>",
+        50270: "<|ca|>",
+        50271: "<|nl|>",
+        50272: "<|ar|>",
+        50273: "<|sv|>",
+        50274: "<|it|>",
+        50275: "<|id|>",
+        50276: "<|hi|>",
+        50277: "<|fi|>",
+        50278: "<|vi|>",
+        50279: "<|he|>",
+        50280: "<|uk|>",
+        50281: "<|el|>",
+        50282: "<|ms|>",
+        50283: "<|cs|>",
+        50284: "<|ro|>",
+        50285: "<|da|>",
+        50286: "<|hu|>",
+        50287: "<|ta|>",
+        50288: "<|no|>",
+        50289: "<|th|>",
+        50290: "<|ur|>",
+        50291: "<|hr|>",
+        50292: "<|bg|>",
+        50293: "<|lt|>",
+        50294: "<|la|>",
+        50295: "<|mi|>",
+        50296: "<|ml|>",
+        50297: "<|cy|>",
+        50298: "<|sk|>",
+        50299: "<|te|>",
+        50300: "<|fa|>",
+        50301: "<|lv|>",
+        50302: "<|bn|>",
+        50303: "<|sr|>",
+        50304: "<|az|>",
+        50305: "<|sl|>",
+        50306: "<|kn|>",
+        50307: "<|et|>",
+        50308: "<|mk|>",
+        50309: "<|br|>",
+        50310: "<|eu|>",
+        50311: "<|is|>",
+        50312: "<|hy|>",
+        50313: "<|ne|>",
+        50314: "<|mn|>",
+        50315: "<|bs|>",
+        50316: "<|kk|>",
+        50317: "<|sq|>",
+        50318: "<|sw|>",
+        50319: "<|gl|>",
+        50320: "<|mr|>",
+        50321: "<|pa|>",
+        50322: "<|si|>",
+        50323: "<|km|>",
+        50324: "<|sn|>",
+        50325: "<|yo|>",
+        50326: "<|so|>",
+        50327: "<|af|>",
+        50328: "<|oc|>",
+        50329: "<|ka|>",
+        50330: "<|be|>",
+        50331: "<|tg|>",
+        50332: "<|sd|>",
+        50333: "<|gu|>",
+        50334: "<|am|>",
+        50335: "<|yi|>",
+        50336: "<|lo|>",
+        50337: "<|uz|>",
+        50338: "<|fo|>",
+        50339: "<|ht|>",
+        50340: "<|ps|>",
+        50341: "<|tk|>",
+        50342: "<|nn|>",
+        50343: "<|mt|>",
+        50344: "<|sa|>",
+        50345: "<|lb|>",
+        50346: "<|my|>",
+        50347: "<|bo|>",
+        50348: "<|tl|>",
+        50349: "<|mg|>",
+        50350: "<|as|>",
+        50351: "<|tt|>",
+        50352: "<|haw|>",
+        50353: "<|ln|>",
+        50354: "<|ha|>",
+        50355: "<|ba|>",
+        50356: "<|jw|>",
+        50357: "<|su|>",
+        50358: "<|yue|>",
+    },
+}
 
 # As per https://platform.openai.com/docs/guides/speech-to-text#overview.
 # TODO configurable
 MAX_AUDIO_CLIP_FILESIZE_MB = 25
+
+
+def trim_lang_token(lang_token: str) -> str:
+    return lang_token.strip().replace("<|", "").replace("|>", "")
+
+# ONLY FOR Whisper v3
+def is_timestamp_token_id(token_id: int) -> bool:
+    return 50365 <= token_id <= 51865
+
+def timestamp_token_id_to_timestamp(token_id: int) -> float:
+    return (token_id - 50365) * 0.02
+
+def remove_timestamps(text: str) -> str:
+    pattern = r'<\|\s*[+-]?\d*\.?\d+\s*\|>'
+    return re.sub(pattern, '', text)
 
 
 class OpenAIServingTranscription(OpenAIServing):
@@ -173,16 +296,13 @@ class OpenAIServingTranscription(OpenAIServing):
                 "Overwriting default completion sampling param with: %s",
                 self.default_sampling_params)
 
-    async def _preprocess_transcription(
+
+    async def _detect_language(
         self,
+        audio_data: tuple[np.ndarray, int],
         request: TranscriptionRequest,
-        audio_data: bytes,
-    ) -> tuple[PromptType, float]:
-        # Validate request
-        # TODO language should be optional and can be guessed.
-        # For now we default to en. See
-        # https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/generation_whisper.py#L1520
-        lang_token = f"<|{request.language}|>" if request.language else "<|en|>"
+        raw_request: Request,
+    ) -> str:
         if request.language:
             if request.language in ISO639_1_SUPPORTED_LANGS:
                 pass
@@ -190,13 +310,68 @@ class OpenAIServingTranscription(OpenAIServing):
                 logger.warning(
                     "The selected language %s has limited accuracy with"
                     " reported WER>=0.5. Results may be less accurate "
-                    "for this choice.", request.language)
+                    "for this choice.",
+                    request.language,
+                )
             else:
                 raise ValueError(
                     f"Unsupported language: {request.language}."
-                    "Language should be one of:" +
-                    f" {list(ISO639_1_SUPPORTED_LANGS.values())}" +
-                    f"or {list(ISO639_1_OTHER_LANGS.values())}")
+                    "Language should be one of:"
+                    + f" {list(ISO639_1_SUPPORTED_LANGS.values())}"
+                    + f"or {list(ISO639_1_OTHER_LANGS.values())}"
+                )
+            return f"<|{request.language}|>"
+
+        default_lang_token = "<|en|>"
+
+        # TODO: this mappping should be dynamice mapping once vllm core supports language dictionary
+        if (
+            "v3" in self.model_config.model.lower()
+            and self.model_config.hf_config.model_type.lower() == "whisper"
+        ):
+            id2token = LANG_ID_TO_LANG_TOKEN["whisper-v3"]
+        else:
+            return default_lang_token
+
+        request_id = f"trsc-dl-{self._base_request_id(raw_request)}"
+        prompt = cast(
+            PromptType,
+            {
+                "encoder_prompt": {
+                    "prompt": "",
+                    "multi_modal_data": {
+                        "audio": audio_data,
+                    },
+                },
+                "decoder_prompt": "<|startoftranscript|>",
+            },
+        )
+        sampling_params = SamplingParams(
+            temperature=0,
+            top_p=1.0,
+            max_tokens=1,
+            allowed_token_ids=list(id2token.keys()),
+        )
+        result_generator = self.engine_client.generate(
+            prompt,
+            sampling_params,
+            request_id,
+        )
+
+        lang_token = default_lang_token
+        async for result in result_generator:
+            lang_id = result.outputs[0].token_ids[0]
+            lang_token = id2token[lang_id]
+            break
+        return lang_token
+
+
+    async def _preprocess_transcription(
+        self,
+        request: TranscriptionRequest,
+        audio_data: bytes,
+        raw_request: Request,
+    ) -> tuple[PromptType, float, str]:
 
         if len(audio_data) / 1024**2 > MAX_AUDIO_CLIP_FILESIZE_MB:
             raise ValueError("Maximum file size exceeded.")
@@ -210,6 +385,8 @@ class OpenAIServingTranscription(OpenAIServing):
                 f"Maximum clip duration ({self.max_audio_clip_s}s) "
                 "exceeded.")
 
+        lang_token = await self._detect_language((y, sr), request, raw_request)
+
         prompt = {
             "encoder_prompt": {
                 "prompt": "",
@@ -218,16 +395,16 @@ class OpenAIServingTranscription(OpenAIServing):
                 },
             },
             "decoder_prompt":
-            f"<|startoftranscript|>{lang_token}<|transcribe|><|notimestamps|>{request.prompt}"
+            f"<|startoftranscript|>{lang_token}<|transcribe|>{request.prompt}"
         }
-        return cast(PromptType, prompt), duration
+        return cast(PromptType, prompt), duration, lang_token
 
     # TODO (varun) : Make verbose response work !
     async def create_transcription(
         self, audio_data: bytes, request: TranscriptionRequest,
         raw_request: Request
-    ) -> Union[TranscriptionResponse, AsyncGenerator[str, None],
-               ErrorResponse]:
+    ) -> Union[TranscriptionResponse, TranscriptionResponseVerbose, AsyncGenerator[str, None],
+               str, ErrorResponse]:
         """Transcription API similar to OpenAI's API.
 
         See https://platform.openai.com/docs/api-reference/audio/createTranscription
@@ -243,9 +420,9 @@ class OpenAIServingTranscription(OpenAIServing):
         if self.engine_client.errored:
             raise self.engine_client.dead_error
 
-        if request.response_format not in ['text', 'json']:
+        if request.response_format not in ['text', 'json', 'verbose_json']:
             return self.create_error_response(
-                "Currently only support response_format `text` or `json`")
+                "Currently only support response_format `text` or `json` or `verbose_json`.",)
 
         request_id = f"trsc-{self._base_request_id(raw_request)}"
 
@@ -267,9 +444,10 @@ class OpenAIServingTranscription(OpenAIServing):
                     "Currently do not support PromptAdapter for Transcription."
                 )
 
-            prompt, duration_s = await self._preprocess_transcription(
+            prompt, duration_s, lang_token = await self._preprocess_transcription(
                 request=request,
                 audio_data=audio_data,
+                raw_request=raw_request,
             )
 
         except ValueError as e:
@@ -282,6 +460,8 @@ class OpenAIServingTranscription(OpenAIServing):
             default_max_tokens = self.model_config.max_model_len
             sampling_params = request.to_sampling_params(
                 default_max_tokens, self.default_sampling_params)
+            sampling_params.logprobs = 1
+            sampling_params.bad_words = ["<|notimestamps|>"]
 
             self._log_inputs(
                 request_id,
@@ -310,7 +490,51 @@ class OpenAIServingTranscription(OpenAIServing):
             assert result_generator is not None
             async for op in result_generator:
                 result = op
-            return TranscriptionResponse(text=result.outputs[0].text)
+            if request.response_format == "json":
+                return TranscriptionResponse(text=result.outputs[0].text)
+            elif request.response_format == "text":
+                return result.outputs[0].text
+            elif request.response_format == "verbose_json":
+                completion_output = result.outputs[0]
+                tokenizer = await self.engine_client.get_tokenizer()
+                response = TranscriptionResponseVerbose(
+                    task="transcribe",
+                    duration=duration_s,
+                    language=trim_lang_token(lang_token),
+                    text=decode_tokens(tokenizer, list(completion_output.token_ids), skip_special_tokens=True),
+                )
+                segment_start, segment_end = None, None
+                current_segment_text = ""
+                current_segment_token_ids = []
+                current_segment_logprobs = []
+                logprobs_ptr = 0
+                for token_id in completion_output.token_ids:
+                    if token_id == 50257:
+                        break
+                    current_segment_token_ids.append(token_id)
+                    current_segment_logprobs.append(completion_output.logprobs[logprobs_ptr][token_id].logprob)
+                    logprobs_ptr += 1
+                    if is_timestamp_token_id(token_id):
+                        if segment_start is None:
+                            segment_start = timestamp_token_id_to_timestamp(token_id)
+                        else:
+                            segment_end = timestamp_token_id_to_timestamp(token_id)
+                            current_segment_text = decode_tokens(tokenizer, current_segment_token_ids,
+                                                                 skip_special_tokens=True)
+                            response.add_segment(
+                                avg_logprob=float(np.mean(current_segment_logprobs)),
+                                start=segment_start,
+                                end=segment_end,
+                                text=current_segment_text,
+                                tokens=current_segment_token_ids,
+                                temperature=request.temperature,
+                            )
+                            segment_start, segment_end, current_segment_text, current_segment_logprobs, current_segment_token_ids = None, None, "", [], []
+                return response
+            else:
+                return self.create_error_response(
+                    "Currently only support response_format `text`, `verbose_json` or `json`"
+                )
         except asyncio.CancelledError:
             return self.create_error_response("Client disconnected")
         except ValueError as e:

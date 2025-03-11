@@ -4,8 +4,10 @@
 # https://github.com/lm-sys/FastChat/blob/168ccc29d3f7edc50823016105c024fe2282732a/fastchat/protocol/openai_api_protocol.py
 import re
 import time
+import zlib
+
 from argparse import Namespace
-from typing import Annotated, Any, ClassVar, Literal, Optional, Union
+from typing import Annotated, Any, ClassVar, Literal, Optional, Union, List
 
 import torch
 from fastapi import UploadFile
@@ -1635,7 +1637,10 @@ class TranscriptionSegment(OpenAIBaseModel):
 
 
 class TranscriptionResponseVerbose(OpenAIBaseModel):
-    duration: str
+    task: str
+    """The task type of the transcription."""
+
+    duration: float
     """The duration of the input audio."""
 
     language: str
@@ -1644,8 +1649,26 @@ class TranscriptionResponseVerbose(OpenAIBaseModel):
     text: str
     """The transcribed text."""
 
-    segments: Optional[list[TranscriptionSegment]] = None
+    segments: Optional[List[TranscriptionSegment]] = None
     """Segments of the transcribed text and their corresponding details."""
 
-    words: Optional[list[TranscriptionWord]] = None
+    words: Optional[List[TranscriptionWord]] = None
     """Extracted words and their corresponding timestamps."""
+
+    class Config:
+        exclude_none = True
+
+    def add_segment(self, avg_logprob: float, start: float, end: float, text: str, tokens: List[int], temperature: float) -> None:
+        if self.segments is None:
+            self.segments = []
+        self.segments.append(TranscriptionSegment(
+            id=len(self.segments),
+            avg_logprob=avg_logprob,
+            start=start,
+            end=end,
+            text=text,
+            tokens=tokens,
+            seek=0,
+            temperature=temperature,
+            compression_ratio=len(text)/(1.0 * len(zlib.compress(text.encode("utf-8")))),
+            no_speech_prob=0))

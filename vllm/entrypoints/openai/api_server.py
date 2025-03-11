@@ -23,7 +23,7 @@ import uvloop
 from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse, PlainTextResponse
 from starlette.datastructures import State
 from starlette.routing import Mount
 from typing_extensions import assert_never
@@ -64,6 +64,7 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               TokenizeResponse,
                                               TranscriptionRequest,
                                               TranscriptionResponse,
+                                              TranscriptionResponseVerbose,
                                               UnloadLoRAAdapterRequest)
 from vllm.entrypoints.openai.reasoning_parsers import ReasoningParserManager
 # yapf: enable
@@ -547,9 +548,10 @@ async def create_transcriptions(request: Annotated[TranscriptionRequest,
     if isinstance(generator, ErrorResponse):
         return JSONResponse(content=generator.model_dump(),
                             status_code=generator.code)
-
-    elif isinstance(generator, TranscriptionResponse):
+    elif isinstance(generator, (TranscriptionResponse, TranscriptionResponseVerbose)):
         return JSONResponse(content=generator.model_dump())
+    elif isinstance(generator, str):
+        return PlainTextResponse(generator)
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
 
