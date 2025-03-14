@@ -261,6 +261,7 @@ class ModelConfig:
         enable_sleep_mode: bool = False,
         override_generation_config: Optional[dict[str, Any]] = None,
         model_impl: Union[str, ModelImpl] = ModelImpl.AUTO,
+        disable_multimodal: bool = False,
     ) -> None:
         self.model = model
         self.hf_config_path = hf_config_path
@@ -394,8 +395,10 @@ class ModelConfig:
             encoder_config=self.encoder_config)
         self.served_model_name = get_served_model_name(model,
                                                        served_model_name)
-        self.multimodal_config = self._init_multimodal_config(
-            limit_mm_per_prompt)
+        if not disable_multimodal:
+            self.multimodal_config = self._init_multimodal_config(limit_mm_per_prompt)
+        else:
+            self.multimodal_config = None
         if not self.skip_tokenizer_init:
             self._verify_tokenizer_mode()
 

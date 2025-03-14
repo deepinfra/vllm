@@ -218,6 +218,7 @@ class EngineArgs:
     enable_reasoning: Optional[bool] = None
     reasoning_parser: Optional[str] = None
     use_tqdm_on_load: bool = True
+    disable_multimodal: bool = False
 
     def __post_init__(self):
         if not self.tokenizer:
@@ -1105,6 +1106,12 @@ class EngineArgs:
             "using. This is used to parse the reasoning content into OpenAI "
             "API format. Required for ``--enable-reasoning``.")
 
+        parser.add_argument('--disable-multimodal',
+                            action='store_true',
+                            default=EngineArgs.disable_multimodal,
+                            help='Disable multimodal capability for multimodal models')
+
+
         return parser
 
     @classmethod
@@ -1164,6 +1171,7 @@ class EngineArgs:
             override_generation_config=self.override_generation_config,
             enable_sleep_mode=self.enable_sleep_mode,
             model_impl=self.model_impl,
+            disable_multimodal=self.disable_multimodal,
         )
 
     def create_load_config(self) -> LoadConfig:
