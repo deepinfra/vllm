@@ -382,6 +382,9 @@ class WorkerProc:
                 # string, only for logging purpose.
                 self.worker_response_mq.enqueue(
                     (WorkerProc.ResponseStatus.FAILURE, str(e)))
+                sys.stdout.flush()
+                sys.stderr.flush()
+                signal.raise_signal(signal.SIGKILL)
                 continue
 
             self.worker_response_mq.enqueue(
