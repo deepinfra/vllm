@@ -473,6 +473,9 @@ class WorkerProc:
                 if not rank0_only or self.rank == 0:
                     self.worker_response_mq.enqueue(
                         (WorkerProc.ResponseStatus.FAILURE, str(e)))
+                sys.stdout.flush()
+                sys.stderr.flush()
+                signal.raise_signal(signal.SIGKILL)
                 continue
 
             if not rank0_only or self.rank == 0:
