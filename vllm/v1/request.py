@@ -33,6 +33,7 @@ class Request:
         structured_output_request: Optional["StructuredOutputRequest"] = None,
     ) -> None:
         self.request_id = request_id
+        sampling_params.guided_decoding = None
         self.sampling_params = sampling_params
         # Because of LoRA, the eos token id can be different for each request.
         self.eos_token_id = eos_token_id
