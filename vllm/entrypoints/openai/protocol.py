@@ -1716,3 +1716,13 @@ class TranscriptionResponseVerbose(OpenAIBaseModel):
 
     words: Optional[list[TranscriptionWord]] = None
     """Extracted words and their corresponding timestamps."""
+
+
+SpeechResponseFormat: TypeAlias = Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]
+SpeechVoices: TypeAlias = Literal["tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe"]
+
+class SpeechRequest(OpenAIBaseModel):
+    input: str
+    model: str
+    voice: SpeechVoices
+    response_format: SpeechResponseFormat = Field(default="wav")

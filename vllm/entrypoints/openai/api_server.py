@@ -63,6 +63,7 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               PoolingRequest, PoolingResponse,
                                               RerankRequest, RerankResponse,
                                               ScoreRequest, ScoreResponse,
+                                              SpeechRequest,
                                               TokenizeRequest,
                                               TokenizeResponse,
                                               TranscriptionRequest,
@@ -81,6 +82,9 @@ from vllm.entrypoints.openai.serving_tokenization import (
     OpenAIServingTokenization)
 from vllm.entrypoints.openai.serving_transcription import (
     OpenAIServingTranscription)
+from vllm.entrypoints.openai.serving_speech import (
+    OpenAIServingSpeech
+)
 from vllm.entrypoints.openai.tool_parsers import ToolParserManager
 from vllm.entrypoints.utils import (cli_env_setup, load_aware_call,
                                     with_cancellation)
@@ -383,6 +387,10 @@ def transcription(request: Request) -> OpenAIServingTranscription:
     return request.app.state.openai_serving_transcription
 
 
+def speech(request: Request) -> OpenAIServingSpeech:
+    return request.app.state.openai_serving_speech
+
+
 def engine_client(request: Request) -> EngineClient:
     return request.app.state.engine_client
 
@@ -623,6 +631,24 @@ async def create_transcriptions(request: Annotated[TranscriptionRequest,
         return JSONResponse(content=generator.model_dump())
 
     return StreamingResponse(content=generator, media_type="text/event-stream")
+
+
+@router.post("/v1/audio/speech")
+@with_cancellation
+@load_aware_call
+async def create_speech(request: SpeechRequest, raw_request: Request):
+    logger.info(f"Speech API, before handler, request: {raw_request}")
+    handler = speech(raw_request)
+    logger.info(f"Speech API, after handler, handler: {handler}")
+    if handler is None:
+        return base(raw_request).create_error_response(
+            message="The model does not support Speech API"
+        )
+
+    logger.info(f"Speech API, request: {raw_request}")
+    generator = await handler.create_speech(request, raw_request)
+
+    return generator
 
 
 @router.post("/rerank", dependencies=[Depends(validate_json_request)])
@@ -1011,6 +1037,12 @@ async def init_app_state(
         state.openai_serving_models,
         request_logger=request_logger,
     ) if model_config.runner_type == "transcription" else None
+    state.openai_serving_speech = OpenAIServingSpeech(
+        engine_client,
+        model_config,
+        state.openai_serving_models,
+        request_logger=request_logger
+    )
     state.task = model_config.task
 
     state.enable_server_load_tracking = args.enable_server_load_tracking
