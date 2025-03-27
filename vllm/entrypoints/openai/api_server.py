@@ -637,18 +637,12 @@ async def create_transcriptions(request: Annotated[TranscriptionRequest,
 @with_cancellation
 @load_aware_call
 async def create_speech(request: SpeechRequest, raw_request: Request):
-    logger.info(f"Speech API, before handler, request: {raw_request}")
     handler = speech(raw_request)
-    logger.info(f"Speech API, after handler, handler: {handler}")
     if handler is None:
         return base(raw_request).create_error_response(
             message="The model does not support Speech API"
         )
-
-    logger.info(f"Speech API, request: {raw_request}")
-    generator = await handler.create_speech(request, raw_request)
-
-    return generator
+    return await handler.create_speech(request, raw_request)
 
 
 @router.post("/rerank", dependencies=[Depends(validate_json_request)])

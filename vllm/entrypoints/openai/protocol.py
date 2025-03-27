@@ -1726,3 +1726,15 @@ class SpeechRequest(OpenAIBaseModel):
     model: str
     voice: SpeechVoices
     response_format: SpeechResponseFormat = Field(default="wav")
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    max_tokens: Optional[int] = None
+    repetition_penalty: Optional[float] = None
+
+    def to_str(self) -> str:
+        return (f"SpeechRequest(input_length={len(self.input)}, "
+                f"model={self.model}, voice={self.voice}, "
+                f"response_format={self.response_format}, "
+                f"temperature={self.temperature}, top_p={self.top_p}, "
+                f"repetition_penalty={self.repetition_penalty}, max_tokens={self.max_tokens})")
+

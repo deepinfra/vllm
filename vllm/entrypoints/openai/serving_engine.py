@@ -29,6 +29,7 @@ from vllm.entrypoints.openai.protocol import (ChatCompletionRequest,
                                               EmbeddingCompletionRequest,
                                               ErrorResponse, RerankRequest,
                                               ScoreRequest,
+                                              SpeechRequest,
                                               TokenizeChatRequest,
                                               TokenizeCompletionRequest,
                                               TranscriptionRequest)
@@ -58,7 +59,7 @@ ChatLikeRequest = Union[ChatCompletionRequest, EmbeddingChatRequest,
                         TokenizeChatRequest]
 
 AnyRequest = Union[CompletionLikeRequest, ChatLikeRequest,
-                   TranscriptionRequest]
+                   TranscriptionRequest, SpeechRequest]
 
 
 class TextTokensPrompt(TypedDict):
