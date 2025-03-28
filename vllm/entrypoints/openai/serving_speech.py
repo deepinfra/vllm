@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import io
+import os
 import json
 import time
 
@@ -27,6 +28,7 @@ from vllm.entrypoints.openai.serving_models import OpenAIServingModels
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import AnyTokenizer
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logger = init_logger(__name__)
 
