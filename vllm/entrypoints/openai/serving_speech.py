@@ -30,7 +30,7 @@ from vllm.transformers_utils.tokenizer import AnyTokenizer
 
 logger = init_logger(__name__)
 
-process_pool = ProcessPoolExecutor()
+process_pool = ProcessPoolExecutor(max_workers=1)
 
 TEMPERATURE = 0.4
 TOP_P = 0.9
