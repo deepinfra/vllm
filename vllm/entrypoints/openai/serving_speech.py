@@ -201,7 +201,7 @@ class OpenAIServingSpeech(OpenAIServing):
 
     async def create_speech_stream(self, request_id: str, completion_generator: AsyncGenerator[str, None] | list[str]) -> AsyncGenerator[bytes, None]:
         st = time.monotonic()
-        logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} OpenAIServingCompletion finished")
+        #logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} OpenAIServingCompletion finished")
         buffer = ""
         token_buffer = []
         token_count = 0
@@ -232,7 +232,7 @@ class OpenAIServingSpeech(OpenAIServing):
                                 _st = time.monotonic()
                                 audio_samples = await asyncio.to_thread(convert_to_audio, buffer_to_proc)
                                 _en = time.monotonic()
-                                logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
+                                #logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
                                 convert_audio_time_sec += _en - _st
                                 audio_chunk_count += 1
                                 if audio_samples is not None:
@@ -240,7 +240,7 @@ class OpenAIServingSpeech(OpenAIServing):
                         buffer = buffer[token_end:]
         logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} finished create_speech_stream "
                     f"convert audio completed in {convert_audio_time_sec:.2f} sec, create speech stream finished in {time.monotonic() - st:.2f} sec, token_count: {token_count}, total audio_chunks: {audio_chunk_count}")
-        logger.info(f"Request id: {request_id} finished generating, total number of tokens: {token_count}, total audio chunks: {audio_chunk_count}")
+        #logger.info(f"Request id: {request_id} finished generating, total number of tokens: {token_count}, total audio chunks: {audio_chunk_count}")
 
 
     async def create_speech(
@@ -251,7 +251,7 @@ class OpenAIServingSpeech(OpenAIServing):
 
         logger.info(f"Received request id: {request_id} request: {request.to_str()}")
         self.request_started_time[request_id] = time.monotonic()
-        logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} started create speech")
+        #logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} started create speech")
 
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
@@ -266,7 +266,7 @@ class OpenAIServingSpeech(OpenAIServing):
 
         formatted_prompt = await self.format_prompt(request, tokenizer)
 
-        logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} format prompt finished")
+        #logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} format prompt finished")
 
         completion_request = CompletionRequest(
             model=request.model,
@@ -281,8 +281,8 @@ class OpenAIServingSpeech(OpenAIServing):
 
         stream_generator = await self.serving_completion.create_completion(completion_request, raw_request)
 
-        logger.info(
-            f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} finished calling completion stream request, type: {type(stream_generator)}")
+        #logger.info(
+        #    f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} finished calling completion stream request, type: {type(stream_generator)}")
 
         media_type = MEDIA_TYPE_INFO.get(request.response_format, "audio/wav")
         content_disposition = f"attachment; filename=orpheus_speech.{request.response_format}"
