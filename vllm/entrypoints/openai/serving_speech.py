@@ -166,7 +166,6 @@ class OpenAIServingSpeech(OpenAIServing):
         self.snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
         self.snac_device = "cpu"
         self.snac_model.to(self.snac_device)
-        init_snac_model()
         logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN snac model initialized and moved to {self.snac_device}")
 
         if self.default_sampling_params:
