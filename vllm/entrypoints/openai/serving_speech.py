@@ -97,7 +97,7 @@ class OpenAIServingSpeech(OpenAIServing):
             self.model_config.get_diff_sampling_param())
         logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN OpenAIServingCompletion finished")
         self.snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
-        self.snac_device = "cuda"
+        self.snac_device = "cpu"
         self.snac_model.to(self.snac_device)
         logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN snac model initialized and moved to {self.snac_device}")
 
