@@ -272,16 +272,10 @@ class OpenAIServingSpeech(OpenAIServing):
         logger.info(
             f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} finished calling completion stream request, type: {type(stream_generator)}")
 
-        stream_generator_fetched = []
-        async for completion in stream_generator:
-            stream_generator_fetched.append(completion)
-
-        logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} finished completion response preprocess")
-
         media_type = MEDIA_TYPE_INFO.get(request.response_format, "audio/wav")
         content_disposition = f"attachment; filename=orpheus_speech.{request.response_format}"
         return StreamingResponse(
-            self.create_speech_stream(request_id, stream_generator_fetched),
+            self.create_speech_stream(request_id, stream_generator),
             media_type=media_type,
             headers={"Content-Disposition": content_disposition},
         )
