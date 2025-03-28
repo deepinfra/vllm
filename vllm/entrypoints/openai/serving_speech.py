@@ -70,8 +70,18 @@ def create_wav_header(sample_rate=24000, bits_per_sample=16, channels=1):
     )
     return header
 
+SNAC_MODEL = None
 
-def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
+def init_snac_model():
+    global SNAC_MODEL
+    SNAC_MODEL = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
+    SNAC_MODEL.to("cpu")
+
+
+def convert_to_audio(multiframe: list[int]) -> Optional[bytes]:
+    global SNAC_MODEL
+    if SNAC_MODEL is None:
+        init_snac_model()
     frames = []
     if len(multiframe) < 7:
         return None
@@ -115,7 +125,7 @@ def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
         return
 
     with torch.inference_mode():
-        audio_hat = snac_model.decode(codes)
+        audio_hat = SNAC_MODEL.decode(codes)
 
     audio_slice = audio_hat[:, :, 2048:4096]
     detached_audio = audio_slice.detach().cpu()
@@ -155,6 +165,7 @@ class OpenAIServingSpeech(OpenAIServing):
         self.snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
         self.snac_device = "cpu"
         self.snac_model.to(self.snac_device)
+        init_snac_model()
         logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN snac model initialized and moved to {self.snac_device}")
 
         if self.default_sampling_params:
@@ -220,7 +231,7 @@ class OpenAIServingSpeech(OpenAIServing):
                                 buffer_to_proc = token_buffer[-28:]
                                 _st = time.monotonic()
                                 loop = asyncio.get_running_loop()
-                                audio_samples = await loop.run_in_executor(process_pool, convert_to_audio, self.snac_model, buffer_to_proc)
+                                audio_samples = await loop.run_in_executor(process_pool, convert_to_audio, buffer_to_proc)
                                 _en = time.monotonic()
                                 logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
                                 convert_audio_time_sec += _en - _st
