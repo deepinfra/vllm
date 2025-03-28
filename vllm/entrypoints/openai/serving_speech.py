@@ -271,7 +271,7 @@ class OpenAIServingSpeech(OpenAIServing):
         completion_request = CompletionRequest(
             model=request.model,
             prompt=formatted_prompt,
-            stream=True,
+            stream=False,
             max_tokens=request.max_tokens or MAX_TOKENS,
             temperature=request.temperature or TEMPERATURE,
             repetition_penalty=request.repetition_penalty or REPETITION_PENALTY,
@@ -280,6 +280,7 @@ class OpenAIServingSpeech(OpenAIServing):
         )
 
         stream_generator = await self.serving_completion.create_completion(completion_request, raw_request)
+        return stream_generator
 
         #logger.info(
         #    f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} finished calling completion stream request, type: {type(stream_generator)}")
