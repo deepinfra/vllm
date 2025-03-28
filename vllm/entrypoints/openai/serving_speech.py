@@ -219,7 +219,7 @@ class OpenAIServingSpeech(OpenAIServing):
                                 buffer_to_proc = token_buffer[-28:]
                                 _st = time.monotonic()
                                 loop = asyncio.get_running_loop()
-                                audio_samples = await loop.run_in_executor(processor_pool, self.convert_to_audio, buffer_to_proc)
+                                audio_samples = await loop.run_in_executor(process_pool, self.convert_to_audio, buffer_to_proc)
                                 _en = time.monotonic()
                                 logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
                                 convert_audio_time_sec += _en - _st
