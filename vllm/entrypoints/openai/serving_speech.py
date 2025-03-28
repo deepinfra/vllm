@@ -8,7 +8,7 @@ import time
 import numpy as np
 import struct
 from collections.abc import AsyncGenerator
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 import torch
 
 from typing import Final, Optional, Union, cast
@@ -29,6 +29,8 @@ from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import AnyTokenizer
 
 logger = init_logger(__name__)
+
+thread_pool = ThreadPoolExecutor(max_workers=16)
 
 TEMPERATURE = 0.4
 TOP_P = 0.9
@@ -230,7 +232,9 @@ class OpenAIServingSpeech(OpenAIServing):
                             if token_count % 7 == 0 and token_count > 27:
                                 buffer_to_proc = token_buffer[-28:]
                                 _st = time.monotonic()
-                                audio_samples = await asyncio.to_thread(convert_to_audio, buffer_to_proc)
+                                loop = asyncio.get_running_loop()
+                                audio_samples = await loop.run_in_executor(thread_pool, convert_to_audio, buffer_to_proc)
+                                #audio_samples = await asyncio.to_thread(convert_to_audio, buffer_to_proc)
                                 _en = time.monotonic()
                                 #logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
                                 convert_audio_time_sec += _en - _st
