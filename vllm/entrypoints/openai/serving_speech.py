@@ -71,6 +71,60 @@ def create_wav_header(sample_rate=24000, bits_per_sample=16, channels=1):
     return header
 
 
+def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
+    frames = []
+    if len(multiframe) < 7:
+        return None
+
+    codes_0 = torch.tensor([], device="cpu", dtype=torch.int32)
+    codes_1 = torch.tensor([], device="cpu", dtype=torch.int32)
+    codes_2 = torch.tensor([], device="cpu", dtype=torch.int32)
+
+    num_frames = len(multiframe) // 7
+    frame = multiframe[:num_frames * 7]
+
+    for j in range(num_frames):
+        i = 7 * j
+        if codes_0.shape[0] == 0:
+            codes_0 = torch.tensor([frame[i]], device="cpu", dtype=torch.int32)
+        else:
+            codes_0 = torch.cat([codes_0, torch.tensor([frame[i]], device="cpu", dtype=torch.int32)])
+
+        if codes_1.shape[0] == 0:
+
+            codes_1 = torch.tensor([frame[i + 1]], device="cpu", dtype=torch.int32)
+            codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device="cpu", dtype=torch.int32)])
+        else:
+            codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 1]], device="cpu", dtype=torch.int32)])
+            codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device="cpu", dtype=torch.int32)])
+
+        if codes_2.shape[0] == 0:
+            codes_2 = torch.tensor([frame[i + 2]], device="cpu", dtype=torch.int32)
+            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device="cpu", dtype=torch.int32)])
+            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device="cpu", dtype=torch.int32)])
+            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device="cpu", dtype=torch.int32)])
+        else:
+            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 2]], device="cpu", dtype=torch.int32)])
+            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device="cpu", dtype=torch.int32)])
+            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device="cpu", dtype=torch.int32)])
+            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device="cpu", dtype=torch.int32)])
+
+    codes = [codes_0.unsqueeze(0), codes_1.unsqueeze(0), codes_2.unsqueeze(0)]
+    if torch.any(codes[0] < 0) or torch.any(codes[0] > 4096) or torch.any(codes[1] < 0) or torch.any(
+            codes[1] > 4096) or torch.any(codes[2] < 0) or torch.any(codes[2] > 4096):
+        return
+
+    with torch.inference_mode():
+        audio_hat = snac_model.decode(codes)
+
+    audio_slice = audio_hat[:, :, 2048:4096]
+    detached_audio = audio_slice.detach().cpu()
+    audio_np = detached_audio.numpy()
+    audio_int16 = (audio_np * 32767).astype(np.int16)
+    audio_bytes = audio_int16.tobytes()
+    return audio_bytes
+
+
 class OpenAIServingSpeech(OpenAIServing):
 
     def __init__(
@@ -134,59 +188,6 @@ class OpenAIServingSpeech(OpenAIServing):
         else:
             return None
 
-    def convert_to_audio(self, multiframe: list[int]) -> Optional[bytes]:
-        frames = []
-        if len(multiframe) < 7:
-            return None
-
-        codes_0 = torch.tensor([], device=self.snac_device, dtype=torch.int32)
-        codes_1 = torch.tensor([], device=self.snac_device, dtype=torch.int32)
-        codes_2 = torch.tensor([], device=self.snac_device, dtype=torch.int32)
-
-        num_frames = len(multiframe) // 7
-        frame = multiframe[:num_frames * 7]
-
-        for j in range(num_frames):
-            i = 7 * j
-            if codes_0.shape[0] == 0:
-                codes_0 = torch.tensor([frame[i]], device=self.snac_device, dtype=torch.int32)
-            else:
-                codes_0 = torch.cat([codes_0, torch.tensor([frame[i]], device=self.snac_device, dtype=torch.int32)])
-
-            if codes_1.shape[0] == 0:
-
-                codes_1 = torch.tensor([frame[i + 1]], device=self.snac_device, dtype=torch.int32)
-                codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device=self.snac_device, dtype=torch.int32)])
-            else:
-                codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 1]], device=self.snac_device, dtype=torch.int32)])
-                codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device=self.snac_device, dtype=torch.int32)])
-
-            if codes_2.shape[0] == 0:
-                codes_2 = torch.tensor([frame[i + 2]], device=self.snac_device, dtype=torch.int32)
-                codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device=self.snac_device, dtype=torch.int32)])
-                codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device=self.snac_device, dtype=torch.int32)])
-                codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device=self.snac_device, dtype=torch.int32)])
-            else:
-                codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 2]], device=self.snac_device, dtype=torch.int32)])
-                codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device=self.snac_device, dtype=torch.int32)])
-                codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device=self.snac_device, dtype=torch.int32)])
-                codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device=self.snac_device, dtype=torch.int32)])
-
-        codes = [codes_0.unsqueeze(0), codes_1.unsqueeze(0), codes_2.unsqueeze(0)]
-        if torch.any(codes[0] < 0) or torch.any(codes[0] > 4096) or torch.any(codes[1] < 0) or torch.any(
-                codes[1] > 4096) or torch.any(codes[2] < 0) or torch.any(codes[2] > 4096):
-            return
-
-        with torch.inference_mode():
-            audio_hat = self.snac_model.decode(codes)
-
-        audio_slice = audio_hat[:, :, 2048:4096]
-        detached_audio = audio_slice.detach().cpu()
-        audio_np = detached_audio.numpy()
-        audio_int16 = (audio_np * 32767).astype(np.int16)
-        audio_bytes = audio_int16.tobytes()
-        return audio_bytes
-
     async def create_speech_stream(self, request_id: str, completion_generator: AsyncGenerator[str, None] | list[str]) -> AsyncGenerator[bytes, None]:
         st = time.monotonic()
         logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} OpenAIServingCompletion finished")
@@ -219,7 +220,7 @@ class OpenAIServingSpeech(OpenAIServing):
                                 buffer_to_proc = token_buffer[-28:]
                                 _st = time.monotonic()
                                 loop = asyncio.get_running_loop()
-                                audio_samples = await loop.run_in_executor(process_pool, self.convert_to_audio, buffer_to_proc)
+                                audio_samples = await loop.run_in_executor(process_pool, convert_to_audio, self.snac_model, buffer_to_proc)
                                 _en = time.monotonic()
                                 logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
                                 convert_audio_time_sec += _en - _st
