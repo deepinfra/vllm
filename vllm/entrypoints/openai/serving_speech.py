@@ -2,11 +2,11 @@
 import asyncio
 import io
 import json
+import time
+
 import numpy as np
 import struct
-import time
 from collections.abc import AsyncGenerator
-from math import ceil
 import torch
 
 from typing import Final, Optional, Union, cast
@@ -19,19 +19,12 @@ from snac import SNAC
 from vllm.config import ModelConfig
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.logger import RequestLogger
-from vllm.entrypoints.openai.protocol import (
-    DeltaMessage, ErrorResponse, RequestResponseMetadata, TranscriptionRequest,
-    TranscriptionResponse, TranscriptionResponseStreamChoice,
-    TranscriptionStreamResponse, UsageInfo, SpeechRequest, CompletionRequest)
+from vllm.entrypoints.openai.protocol import (ErrorResponse, RequestResponseMetadata, SpeechRequest, CompletionRequest, CompletionResponse)
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 from vllm.entrypoints.openai.serving_engine import OpenAIServing
 from vllm.entrypoints.openai.serving_models import OpenAIServingModels
-from vllm.inputs.data import PromptType
 from vllm.logger import init_logger
-from vllm.outputs import RequestOutput
-from vllm.transformers_utils.processor import cached_get_processor
-from vllm.transformers_utils.tokenizer import decode_tokens, AnyTokenizer
-from vllm.utils import PlaceholderModule
+from vllm.transformers_utils.tokenizer import AnyTokenizer
 
 
 logger = init_logger(__name__)
@@ -87,6 +80,8 @@ class OpenAIServingSpeech(OpenAIServing):
         request_logger: Optional[RequestLogger],
         return_tokens_as_token_ids: bool = False,
     ):
+        st = time.monotonic()
+        logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN OpenAIServingSpeech init started")
         super().__init__(engine_client=engine_client,
                          model_config=model_config,
                          models=models,
@@ -100,14 +95,19 @@ class OpenAIServingSpeech(OpenAIServing):
             return_tokens_as_token_ids=return_tokens_as_token_ids)
         self.default_sampling_params = (
             self.model_config.get_diff_sampling_param())
+        logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN OpenAIServingCompletion finished")
         self.snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
-        self.snac_device = "cuda"
+        self.snac_device = "cpu"
         self.snac_model.to(self.snac_device)
+        logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN snac model initialized and moved to {self.snac_device}")
 
         if self.default_sampling_params:
             logger.info(
                 "Overwriting default completion sampling param with: %s",
                 self.default_sampling_params)
+
+        logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN OpenAIServingSpeech init finished")
+        self.request_started_time = {}
 
     async def format_prompt(self, request: SpeechRequest, tokenizer: AnyTokenizer) -> str:
         adapted_prompt = f"{request.voice}: {request.input}"
@@ -185,11 +185,21 @@ class OpenAIServingSpeech(OpenAIServing):
         audio_bytes = audio_int16.tobytes()
         return audio_bytes
 
-    async def create_speech_stream(self, request_id: str, completion_generator: AsyncGenerator[str, None]) -> AsyncGenerator[bytes, None]:
+    async def create_speech_stream(self, request_id: str, completion_generator: AsyncGenerator[str, None] | list[str]) -> AsyncGenerator[bytes, None]:
+        st = time.monotonic()
+        logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} OpenAIServingCompletion finished")
         buffer = ""
         token_buffer = []
         token_count = 0
         audio_chunk_count = 0
+        convert_audio_time_sec = 0
+
+        async def async_wrap(iterable):
+            for item in iterable:
+                yield item
+        if isinstance(completion_generator, list):
+            completion_generator = async_wrap(completion_generator)
+
         async for chunk in completion_generator:
             data = chunk[len("data: "):].strip()
             if data != "[DONE]":
@@ -205,21 +215,29 @@ class OpenAIServingSpeech(OpenAIServing):
                             token_count += 1
                             if token_count % 7 == 0 and token_count > 27:
                                 buffer_to_proc = token_buffer[-28:]
+                                _st = time.monotonic()
                                 audio_samples = self.convert_to_audio(buffer_to_proc)
+                                _en = time.monotonic()
+                                logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
+                                convert_audio_time_sec += _en - _st
                                 audio_chunk_count += 1
                                 if audio_samples is not None:
                                     yield audio_samples
                         buffer = buffer[token_end:]
+        logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} finished create_speech_stream "
+                    f"convert audio completed in {convert_audio_time_sec:.2f} sec, create speech stream finished in {time.monotonic() - st:.2f} sec, token_count: {token_count}, total audio_chunks: {audio_chunk_count}")
         logger.info(f"Request id: {request_id} finished generating, total number of tokens: {token_count}, total audio chunks: {audio_chunk_count}")
 
 
     async def create_speech(
         self, request: SpeechRequest, raw_request: Request
-    ) -> Union[StreamingResponse, ErrorResponse]:
+    ) -> Union[StreamingResponse, ErrorResponse, CompletionResponse]:
         request_id = f"cspc-{self._base_request_id(raw_request)}"
         tokenizer = (await self.engine_client.get_tokenizer())
 
         logger.info(f"Received request id: {request_id} request: {request.to_str()}")
+        self.request_started_time[request_id] = time.monotonic()
+        logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} started create speech")
 
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
@@ -234,6 +252,8 @@ class OpenAIServingSpeech(OpenAIServing):
 
         formatted_prompt = await self.format_prompt(request, tokenizer)
 
+        logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} format prompt finished")
+
         completion_request = CompletionRequest(
             model=request.model,
             prompt=formatted_prompt,
@@ -247,10 +267,21 @@ class OpenAIServingSpeech(OpenAIServing):
 
         stream_generator = await self.serving_completion.create_completion(completion_request, raw_request)
 
+        #return stream_generator
+
+        logger.info(
+            f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} finished calling completion stream request, type: {type(stream_generator)}")
+
+        stream_generator_fetched = []
+        async for completion in stream_generator:
+            stream_generator_fetched.append(completion)
+
+        logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} finished completion response preprocess")
+
         media_type = MEDIA_TYPE_INFO.get(request.response_format, "audio/wav")
         content_disposition = f"attachment; filename=orpheus_speech.{request.response_format}"
         return StreamingResponse(
-            self.create_speech_stream(request_id, stream_generator),
+            self.create_speech_stream(request_id, stream_generator_fetched),
             media_type=media_type,
             headers={"Content-Disposition": content_disposition},
         )
