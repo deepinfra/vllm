@@ -28,11 +28,7 @@ from vllm.entrypoints.openai.serving_models import OpenAIServingModels
 from vllm.logger import init_logger
 from vllm.transformers_utils.tokenizer import AnyTokenizer
 
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 logger = init_logger(__name__)
-
-process_pool = ProcessPoolExecutor(max_workers=1)
 
 TEMPERATURE = 0.4
 TOP_P = 0.9
@@ -233,7 +229,7 @@ class OpenAIServingSpeech(OpenAIServing):
                                 buffer_to_proc = token_buffer[-28:]
                                 _st = time.monotonic()
                                 loop = asyncio.get_running_loop()
-                                audio_samples = await loop.run_in_executor(process_pool, convert_to_audio, buffer_to_proc)
+                                audio_samples = convert_to_audio(buffer_to_proc)
                                 _en = time.monotonic()
                                 logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
                                 convert_audio_time_sec += _en - _st
