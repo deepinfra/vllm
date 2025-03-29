@@ -70,20 +70,11 @@ def create_wav_header(sample_rate=24000, bits_per_sample=16, channels=1):
     )
     return header
 
-class SNACWrapper:
-    _instance = None
-    _lock = asyncio.Lock()
-
-    @classmethod
-    async def get_model(cls) -> SNAC:
-        async with cls._lock:
-            if cls._instance is None:
-                instance = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
-                instance.to("cpu")
-                cls._instance = instance
-            return cls._instance
+snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
+snac_model.to("cpu")
 
 def convert_to_audio(multiframe: list[int]) -> Optional[bytes]:
+    st = time.monotonic()
     frames = []
     if len(multiframe) < 7:
         return None
@@ -126,15 +117,24 @@ def convert_to_audio(multiframe: list[int]) -> Optional[bytes]:
             codes[1] > 4096) or torch.any(codes[2] < 0) or torch.any(codes[2] > 4096):
         return
 
-    snac_model = asyncio.run(SNACWrapper.get_model())
+    logger.info(f"TEMIRULAN convert_to_audio preprocess in {time.monotonic() - st:.3f} sec")
+
+    st = time.monotonic()
+    global snac_model
     with torch.inference_mode():
         audio_hat = snac_model.decode(codes)
 
+    logger.info(f"TEMIRULAN convert_to_audio inference in {time.monotonic() - st:.3f} sec")
+
+    st = time.monotonic()
     audio_slice = audio_hat[:, :, 2048:4096]
     detached_audio = audio_slice.detach().cpu()
     audio_np = detached_audio.numpy()
     audio_int16 = (audio_np * 32767).astype(np.int16)
     audio_bytes = audio_int16.tobytes()
+
+    logger.info(f"TEMIRULAN convert_to_audio postprocess in {time.monotonic() - st:.3f} sec")
+
     return audio_bytes
 
 
