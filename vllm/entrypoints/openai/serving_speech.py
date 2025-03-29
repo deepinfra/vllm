@@ -114,13 +114,9 @@ def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
             codes[1] > 4096) or torch.any(codes[2] < 0) or torch.any(codes[2] > 4096):
         return
 
-    logger.info(f"TEMIRULAN convert_to_audio preprocess in {time.monotonic() - st:.3f} sec")
-
     st = time.monotonic()
     with torch.inference_mode():
         audio_hat = snac_model.decode(codes)
-
-    logger.info(f"TEMIRULAN convert_to_audio inference in {time.monotonic() - st:.3f} sec")
 
     st = time.monotonic()
     audio_slice = audio_hat[:, :, 2048:4096]
@@ -128,8 +124,6 @@ def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
     audio_np = detached_audio.numpy()
     audio_int16 = (audio_np * 32767).astype(np.int16)
     audio_bytes = audio_int16.tobytes()
-
-    logger.info(f"TEMIRULAN convert_to_audio postprocess in {time.monotonic() - st:.3f} sec")
 
     return audio_bytes
 
