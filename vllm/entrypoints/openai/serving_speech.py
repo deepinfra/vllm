@@ -275,7 +275,7 @@ class OpenAIServingSpeech(OpenAIServing):
         completion_request = CompletionRequest(
             model=request.model,
             prompt=formatted_prompt,
-            stream=False,
+            stream=True,
             max_tokens=request.max_tokens or MAX_TOKENS,
             temperature=request.temperature or TEMPERATURE,
             repetition_penalty=request.repetition_penalty or REPETITION_PENALTY,
