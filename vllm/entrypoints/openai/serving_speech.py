@@ -70,10 +70,7 @@ def create_wav_header(sample_rate=24000, bits_per_sample=16, channels=1):
     )
     return header
 
-snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
-snac_model.to("cpu")
-
-def convert_to_audio(multiframe: list[int]) -> Optional[bytes]:
+def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
     st = time.monotonic()
     frames = []
     if len(multiframe) < 7:
@@ -120,7 +117,6 @@ def convert_to_audio(multiframe: list[int]) -> Optional[bytes]:
     logger.info(f"TEMIRULAN convert_to_audio preprocess in {time.monotonic() - st:.3f} sec")
 
     st = time.monotonic()
-    global snac_model
     with torch.inference_mode():
         audio_hat = snac_model.decode(codes)
 
@@ -233,7 +229,7 @@ class OpenAIServingSpeech(OpenAIServing):
                                 buffer_to_proc = token_buffer[-28:]
                                 _st = time.monotonic()
                                 loop = asyncio.get_running_loop()
-                                audio_samples = await loop.run_in_executor(thread_pool, convert_to_audio, buffer_to_proc)
+                                audio_samples = await loop.run_in_executor(thread_pool, convert_to_audio, self.snac_model, buffer_to_proc)
                                 #audio_samples = await asyncio.to_thread(convert_to_audio, buffer_to_proc)
                                 _en = time.monotonic()
                                 #logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
