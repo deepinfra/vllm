@@ -76,9 +76,9 @@ def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
     if len(multiframe) < 7:
         return None
 
-    codes_0 = torch.tensor([], device="cpu", dtype=torch.int32)
-    codes_1 = torch.tensor([], device="cpu", dtype=torch.int32)
-    codes_2 = torch.tensor([], device="cpu", dtype=torch.int32)
+    # codes_0 = torch.tensor([], device="cpu", dtype=torch.int32)
+    # codes_1 = torch.tensor([], device="cpu", dtype=torch.int32)
+    # codes_2 = torch.tensor([], device="cpu", dtype=torch.int32)
 
     num_frames = len(multiframe) // 7
     frame = multiframe[:num_frames * 7]
@@ -168,7 +168,7 @@ class OpenAIServingSpeech(OpenAIServing):
             self.model_config.get_diff_sampling_param())
         logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN OpenAIServingCompletion finished")
         self.snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval()
-        self.snac_device = "cpu"
+        self.snac_device = "cuda"
         self.snac_model.to(self.snac_device)
         logger.info(f"[{time.monotonic() - st:.3f} sec] TEMIRULAN snac model initialized and moved to {self.snac_device}")
 
