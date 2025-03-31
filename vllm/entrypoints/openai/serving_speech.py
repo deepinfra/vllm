@@ -238,7 +238,7 @@ class OpenAIServingSpeech(OpenAIServing):
                                 audio_samples = await loop.run_in_executor(thread_pool, convert_to_audio, self.snac_model, buffer_to_proc)
                                 #audio_samples = await asyncio.to_thread(convert_to_audio, buffer_to_proc)
                                 _en = time.monotonic()
-                                logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
+                                #logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
                                 convert_audio_time_sec += _en - _st
                                 audio_chunk_count += 1
                                 if audio_samples is not None:
