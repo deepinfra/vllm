@@ -83,33 +83,45 @@ def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
     num_frames = len(multiframe) // 7
     frame = multiframe[:num_frames * 7]
 
+    # for j in range(num_frames):
+    #     i = 7 * j
+    #     if codes_0.shape[0] == 0:
+    #         codes_0 = torch.tensor([frame[i]], device="cpu", dtype=torch.int32)
+    #     else:
+    #         codes_0 = torch.cat([codes_0, torch.tensor([frame[i]], device="cpu", dtype=torch.int32)])
+    #
+    #     if codes_1.shape[0] == 0:
+    #
+    #         codes_1 = torch.tensor([frame[i + 1]], device="cpu", dtype=torch.int32)
+    #         codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device="cpu", dtype=torch.int32)])
+    #     else:
+    #         codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 1]], device="cpu", dtype=torch.int32)])
+    #         codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device="cpu", dtype=torch.int32)])
+    #
+    #     if codes_2.shape[0] == 0:
+    #         codes_2 = torch.tensor([frame[i + 2]], device="cpu", dtype=torch.int32)
+    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device="cpu", dtype=torch.int32)])
+    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device="cpu", dtype=torch.int32)])
+    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device="cpu", dtype=torch.int32)])
+    #     else:
+    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 2]], device="cpu", dtype=torch.int32)])
+    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device="cpu", dtype=torch.int32)])
+    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device="cpu", dtype=torch.int32)])
+    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device="cpu", dtype=torch.int32)])
+
+    codes_0, codes_1, codes_2 = [], [], []
     for j in range(num_frames):
         i = 7 * j
-        if codes_0.shape[0] == 0:
-            codes_0 = torch.tensor([frame[i]], device="cpu", dtype=torch.int32)
-        else:
-            codes_0 = torch.cat([codes_0, torch.tensor([frame[i]], device="cpu", dtype=torch.int32)])
+        codes_0.append(frame[i])
+        codes_1 += [frame[i + 1], frame[i + 4]]
+        codes_2 += [frame[i + 2], frame[i + 3], frame[i + 5], frame[i + 6]]
 
-        if codes_1.shape[0] == 0:
+    codes = [
+        torch.tensor([codes_0], dtype=torch.int32, device="cuda"),
+        torch.tensor([codes_1], dtype=torch.int32, device="cuda"),
+        torch.tensor([codes_2], dtype=torch.int32, device="cuda"),
+    ]
 
-            codes_1 = torch.tensor([frame[i + 1]], device="cpu", dtype=torch.int32)
-            codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device="cpu", dtype=torch.int32)])
-        else:
-            codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 1]], device="cpu", dtype=torch.int32)])
-            codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device="cpu", dtype=torch.int32)])
-
-        if codes_2.shape[0] == 0:
-            codes_2 = torch.tensor([frame[i + 2]], device="cpu", dtype=torch.int32)
-            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device="cpu", dtype=torch.int32)])
-            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device="cpu", dtype=torch.int32)])
-            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device="cpu", dtype=torch.int32)])
-        else:
-            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 2]], device="cpu", dtype=torch.int32)])
-            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device="cpu", dtype=torch.int32)])
-            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device="cpu", dtype=torch.int32)])
-            codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device="cpu", dtype=torch.int32)])
-
-    codes = [codes_0.unsqueeze(0), codes_1.unsqueeze(0), codes_2.unsqueeze(0)]
     if torch.any(codes[0] < 0) or torch.any(codes[0] > 4096) or torch.any(codes[1] < 0) or torch.any(
             codes[1] > 4096) or torch.any(codes[2] < 0) or torch.any(codes[2] > 4096):
         return
@@ -226,7 +238,7 @@ class OpenAIServingSpeech(OpenAIServing):
                                 audio_samples = await loop.run_in_executor(thread_pool, convert_to_audio, self.snac_model, buffer_to_proc)
                                 #audio_samples = await asyncio.to_thread(convert_to_audio, buffer_to_proc)
                                 _en = time.monotonic()
-                                #logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
+                                logger.info(f"[{time.monotonic() - self.request_started_time.get(request_id, -1):.3f} sec] TEMIRULAN r_id:{request_id} single audio convertion finished in {_en - _st:.2f} sec")
                                 convert_audio_time_sec += _en - _st
                                 audio_chunk_count += 1
                                 if audio_samples is not None:
