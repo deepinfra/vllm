@@ -71,43 +71,11 @@ def create_wav_header(sample_rate=24000, bits_per_sample=16, channels=1):
     return header
 
 def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
-    st = time.monotonic()
-    frames = []
     if len(multiframe) < 7:
         return None
 
-    # codes_0 = torch.tensor([], device="cpu", dtype=torch.int32)
-    # codes_1 = torch.tensor([], device="cpu", dtype=torch.int32)
-    # codes_2 = torch.tensor([], device="cpu", dtype=torch.int32)
-
     num_frames = len(multiframe) // 7
     frame = multiframe[:num_frames * 7]
-
-    # for j in range(num_frames):
-    #     i = 7 * j
-    #     if codes_0.shape[0] == 0:
-    #         codes_0 = torch.tensor([frame[i]], device="cpu", dtype=torch.int32)
-    #     else:
-    #         codes_0 = torch.cat([codes_0, torch.tensor([frame[i]], device="cpu", dtype=torch.int32)])
-    #
-    #     if codes_1.shape[0] == 0:
-    #
-    #         codes_1 = torch.tensor([frame[i + 1]], device="cpu", dtype=torch.int32)
-    #         codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device="cpu", dtype=torch.int32)])
-    #     else:
-    #         codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 1]], device="cpu", dtype=torch.int32)])
-    #         codes_1 = torch.cat([codes_1, torch.tensor([frame[i + 4]], device="cpu", dtype=torch.int32)])
-    #
-    #     if codes_2.shape[0] == 0:
-    #         codes_2 = torch.tensor([frame[i + 2]], device="cpu", dtype=torch.int32)
-    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device="cpu", dtype=torch.int32)])
-    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device="cpu", dtype=torch.int32)])
-    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device="cpu", dtype=torch.int32)])
-    #     else:
-    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 2]], device="cpu", dtype=torch.int32)])
-    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 3]], device="cpu", dtype=torch.int32)])
-    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 5]], device="cpu", dtype=torch.int32)])
-    #         codes_2 = torch.cat([codes_2, torch.tensor([frame[i + 6]], device="cpu", dtype=torch.int32)])
 
     codes_0, codes_1, codes_2 = [], [], []
     for j in range(num_frames):
@@ -126,11 +94,9 @@ def convert_to_audio(snac_model, multiframe: list[int]) -> Optional[bytes]:
             codes[1] > 4096) or torch.any(codes[2] < 0) or torch.any(codes[2] > 4096):
         return
 
-    st = time.monotonic()
     with torch.inference_mode():
         audio_hat = snac_model.decode(codes)
 
-    st = time.monotonic()
     audio_slice = audio_hat[:, :, 2048:4096]
     detached_audio = audio_slice.detach().cpu()
     audio_np = detached_audio.numpy()
