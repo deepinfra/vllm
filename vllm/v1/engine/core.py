@@ -20,6 +20,7 @@ from vllm.distributed import stateless_destroy_torch_distributed_process_group
 from vllm.executor.multiproc_worker_utils import _add_prefix
 from vllm.logger import init_logger
 from vllm.lora.request import LoRARequest
+from vllm.sampling_params import GuidedDecodingParams, SamplingParams
 from vllm.transformers_utils.config import (
     maybe_register_config_serialize_by_value)
 from vllm.utils import resolve_obj_by_qualname, zmq_socket_ctx
@@ -118,6 +119,27 @@ class EngineCore:
                         self.batch_queue_size)
             self.batch_queue = queue.Queue(self.batch_queue_size)
         self.vllm_config = vllm_config
+
+        json_samp = SamplingParams(
+            temperature=1.0,
+            max_tokens=1,
+            n=1,
+            guided_decoding=GuidedDecodingParams(
+                json_object=True,
+                backend=vllm_config.decoding_config.guided_decoding_backend))
+
+        json_ecr = EngineCoreRequest(
+            request_id="json_init_%s" % str(id(self)),
+            prompt_token_ids=[1],
+            mm_inputs=None,
+            mm_hashes=None,
+            mm_placeholders=None,
+            sampling_params=json_samp,
+            eos_token_id=None,
+            arrival_time=time.time(),
+            lora_request=None,
+        )
+        self.add_request(json_ecr)
 
     def _initialize_kv_caches(
             self, vllm_config: VllmConfig) -> tuple[int, int, KVCacheConfig]:
