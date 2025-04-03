@@ -195,7 +195,7 @@ RUN echo 'tzdata tzdata/Areas select America' | debconf-set-selections \
     && python3 --version && python3 -m pip --version
 # Install uv for faster pip installs
 RUN --mount=type=cache,target=/root/.cache/uv \
-    python3 -m pip install uv
+    python3 -m pip install uv librosa pydub wave snac
 
 # This timeout (in seconds) is necessary when installing some dependencies via uv since it's likely to time out
 # Reference: https://github.com/astral-sh/uv/pull/1694
