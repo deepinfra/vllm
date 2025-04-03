@@ -195,7 +195,7 @@ RUN echo 'tzdata tzdata/Areas select America' | debconf-set-selections \
     && python3 --version && python3 -m pip --version
 # Install uv for faster pip installs
 RUN --mount=type=cache,target=/root/.cache/uv \
-    python3 -m pip install uv librosa pydub wave snac
+    python3 -m pip install uv
 
 # This timeout (in seconds) is necessary when installing some dependencies via uv since it's likely to time out
 # Reference: https://github.com/astral-sh/uv/pull/1694
@@ -297,9 +297,9 @@ ENV UV_HTTP_TIMEOUT=500
 # install additional dependencies for openai api server
 RUN --mount=type=cache,target=/root/.cache/uv \
     if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
-        uv pip install --system accelerate hf_transfer 'modelscope!=1.15.0' 'bitsandbytes>=0.42.0' 'timm==0.9.10' boto3 runai-model-streamer runai-model-streamer[s3]; \
+        uv pip install --system accelerate hf_transfer 'modelscope!=1.15.0' 'bitsandbytes>=0.42.0' 'timm==0.9.10' boto3 runai-model-streamer runai-model-streamer[s3] librosa pydub wave snac; \
     else \
-        uv pip install --system accelerate hf_transfer 'modelscope!=1.15.0' 'bitsandbytes>=0.45.3' 'timm==0.9.10' boto3 runai-model-streamer runai-model-streamer[s3]; \
+        uv pip install --system accelerate hf_transfer 'modelscope!=1.15.0' 'bitsandbytes>=0.45.3' 'timm==0.9.10' boto3 runai-model-streamer runai-model-streamer[s3] librosa pydub wave snac; \
     fi
 
 ENV VLLM_USAGE_SOURCE production-docker-image
