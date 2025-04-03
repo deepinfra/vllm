@@ -4,11 +4,13 @@ import io
 import os
 import json
 import time
+import wave
 
 import numpy as np
 import struct
 from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
+from pydub import AudioSegment
 import torch
 
 from typing import Final, Optional, Union, cast
@@ -45,6 +47,40 @@ MEDIA_TYPE_INFO = {
     "flac": "audio/flac",
     "pcm": "audio/pcm",
 }
+
+
+def convert_audio_bytes_from_pcm(raw_audio_bytes: bytes,
+                               fmt: str,
+                               sample_rate: int = 24000,
+                               num_channels: int = 1,
+                               sample_width: int = 2) -> bytes:
+    fmt = fmt.lower()
+    if fmt == "wav":
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, 'wb') as wav_file:
+            wav_file.setnchannels(num_channels)
+            wav_file.setsampwidth(sample_width)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(raw_audio_bytes)
+        return wav_buffer.getvalue()
+    elif fmt in ['mp3', 'opus', 'flac', 'aac']:
+        audio_segment = AudioSegment(
+            data=raw_audio_bytes,
+            sample_width=sample_width,
+            frame_rate=sample_rate,
+            channels=num_channels
+        )
+        buffer = io.BytesIO()
+        if fmt == 'aac':
+            audio_segment.export(buffer, format="adts", codec="aac")
+        else:
+            audio_segment.export(buffer, format=fmt)
+        return buffer.getvalue()
+    elif fmt == 'pcm':
+        return raw_audio_bytes
+    else:
+        raise ValueError(f"Unsupported format: {fmt}")
+
 
 def create_wav_header(sample_rate=24000, bits_per_sample=16, channels=1):
     byte_rate = sample_rate * channels * bits_per_sample // 8
@@ -203,6 +239,8 @@ class OpenAIServingSpeech(OpenAIServing):
                                     yield audio_samples
                         buffer = buffer[token_end:]
 
+    async def create_speech_nonstream(self, audio_bytes: bytes) -> AsyncGenerator[bytes, None]:
+        yield audio_bytes
 
     async def create_speech(
         self, request: SpeechRequest, raw_request: Request
@@ -241,6 +279,18 @@ class OpenAIServingSpeech(OpenAIServing):
 
         media_type = MEDIA_TYPE_INFO.get(request.response_format, "audio/wav")
         content_disposition = f"attachment; filename=orpheus_speech.{request.response_format}"
+
+        if not request.stream:
+            total_bytes = b""
+            async for audio_byte in self.create_speech_stream(request_id, stream_generator):
+                total_bytes += audio_byte
+            converted_bytes = convert_audio_bytes_from_pcm(total_bytes, request.response_format)
+            return StreamingResponse(
+                self.create_speech_nonstream(converted_bytes),
+                media_type=media_type,
+                headers={"Content-Disposition": content_disposition},
+            )
+
         return StreamingResponse(
             self.create_speech_stream(request_id, stream_generator),
             media_type=media_type,

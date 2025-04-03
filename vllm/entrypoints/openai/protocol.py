@@ -1730,6 +1730,7 @@ class SpeechRequest(OpenAIBaseModel):
     top_p: Optional[float] = None
     max_tokens: Optional[int] = None
     repetition_penalty: Optional[float] = None
+    stream: bool = True
 
     def to_str(self) -> str:
         return (f"SpeechRequest(input_length={len(self.input)}, "
