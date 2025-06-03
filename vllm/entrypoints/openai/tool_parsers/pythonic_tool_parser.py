@@ -41,8 +41,8 @@ class PythonicToolParser(ToolParser):
     # Llama3.2 models more reliable.
 
     TOOL_CALL_REGEX = re.compile(
-        r"\[([a-zA-Z]+\w*\(([a-zA-Z]+\w*=.*,\s*)*([a-zA-Z]+\w*=.*\s)?\),\s*)*([a-zA-Z]+\w*\(([a-zA-Z]+\w*=.*,\s*)*([a-zA-Z]+\w*=.*\s*)?\)\s*)+\]",
-        re.DOTALL)
+        r"$$([a-zA-Z_\p{L}\p{N}]+$$([a-zA-Z_\p{L}\p{N}]+=.*,\s*)*([a-zA-Z_\p{L}\p{N}]+=.*\s)?$$,\s*)*([a-zA-Z_\p{L}\p{N}]+$$([a-zA-Z_\p{L}\p{N}]+=.*,\s*)*([a-zA-Z_\p{L}\p{N}]+=.*\s*)?$$\s*)+$$",
+        re.DOTALL | re.UNICODE)
 
     def __init__(self, tokenizer: PreTrainedTokenizerBase):
         super().__init__(tokenizer)
@@ -64,7 +64,8 @@ class PythonicToolParser(ToolParser):
         """
         is_tool_call_pattern = False
         try:
-            is_tool_call_pattern = self.TOOL_CALL_REGEX.match(
+            # Changed from match() to search() to find tool calls anywhere
+            is_tool_call_pattern = self.TOOL_CALL_REGEX.search(
                 model_output,
                 timeout=envs.VLLM_TOOL_PARSE_REGEX_TIMEOUT_SECONDS) is not None
         except TimeoutError:
@@ -79,17 +80,23 @@ class PythonicToolParser(ToolParser):
                                                 content=model_output)
 
         try:
-            module = ast.parse(model_output)
+            # Find the tool call portion
+            tool_match = self.TOOL_CALL_REGEX.search(model_output)
+            tool_text = tool_match.group(0)
+
+            module = ast.parse(tool_text)
             parsed = getattr(module.body[0], "value", None)
             if isinstance(parsed, ast.List) and all(
                     isinstance(e, ast.Call) for e in parsed.elts):
+                # Preserve non-tool content
+                content = model_output.replace(tool_text, "", 1).strip()
                 return ExtractedToolCallInformation(
                     tools_called=True,
                     tool_calls=[
                         _handle_single_tool(e)  # type: ignore
                         for e in parsed.elts
                     ],
-                    content=None)
+                    content=content or None)
             else:
                 raise _UnexpectedAstError(
                     "Tool output must be a list of function calls")
@@ -111,7 +118,8 @@ class PythonicToolParser(ToolParser):
         request: ChatCompletionRequest,
     ) -> Union[DeltaMessage, None]:
 
-        if not current_text.startswith("["):
+        # check for bracket anywhere in text
+        if "[" not in current_text:
             return DeltaMessage(content=delta_text)
 
         try:
@@ -189,6 +197,12 @@ class PythonicToolParser(ToolParser):
 
 def _get_parameter_value(val: ast.expr) -> Any:
     if isinstance(val, ast.Constant):
+        # Handle Unicode escape sequences
+        if isinstance(val.value, str):
+            try:
+                return val.value.encode('latin1').decode('unicode-escape')
+            except:
+                return val.value
         return val.value
     elif isinstance(val, ast.Dict):
         if not all(isinstance(k, ast.Constant) for k in val.keys):
