@@ -27,7 +27,7 @@ from vllm.entrypoints.openai.protocol import (
     ChatCompletionResponseChoice, ChatCompletionResponseStreamChoice,
     ChatCompletionStreamResponse, ChatMessage, DeltaFunctionCall, DeltaMessage,
     DeltaToolCall, ErrorResponse, FunctionCall, FunctionDefinition,
-    PromptTokenUsageInfo, RequestResponseMetadata, ToolCall, UsageInfo)
+    PromptTokenUsageInfo, RequestResponseMetadata, RequestMetricsInfo, ToolCall, UsageInfo)
 from vllm.entrypoints.openai.serving_engine import (OpenAIServing,
                                                     clamp_prompt_logprobs)
 from vllm.entrypoints.openai.serving_models import OpenAIServingModels
@@ -477,8 +477,10 @@ class OpenAIServingChat(OpenAIServing):
         else:
             include_usage, include_continuous_usage = False, False
 
+        final_res: Optional[RequestOutput] = None
         try:
             async for res in result_generator:
+                final_res = res  # Capture the final RequestOutput for metrics
                 if res.prompt_token_ids is not None:
                     num_prompt_tokens = len(res.prompt_token_ids)
                     if res.encoder_prompt_token_ids is not None:
@@ -894,7 +896,8 @@ class OpenAIServingChat(OpenAIServing):
                     created=created_time,
                     choices=[],
                     model=model_name,
-                    usage=final_usage)
+                    usage=final_usage,
+                    metrics=RequestMetricsInfo.from_request_metrics(final_res.metrics) if final_res else None)
                 final_usage_data = (final_usage_chunk.model_dump_json(
                     exclude_unset=True, exclude_none=True))
                 yield f"data: {final_usage_data}\n\n"
@@ -1115,6 +1118,7 @@ class OpenAIServingChat(OpenAIServing):
             choices=choices,
             usage=usage,
             prompt_logprobs=clamp_prompt_logprobs(final_res.prompt_logprobs),
+            metrics=RequestMetricsInfo.from_request_metrics(final_res.metrics),
             kv_transfer_params=final_res.kv_transfer_params,
         )
 

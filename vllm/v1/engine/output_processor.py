@@ -105,6 +105,9 @@ class RequestState:
         self.stats = RequestStateStats(
             arrival_time=arrival_time) if log_stats else None
 
+        # Store request metrics for V1 priority benefit tracking
+        self.request_metrics: Optional[dict[str, Any]] = None
+
     @classmethod
     def from_new_request(
         cls,
@@ -188,6 +191,27 @@ class RequestState:
         else:
             prompt_logprobs = self.logprobs_processor.prompt_logprobs
 
+        # Create RequestMetrics from stored metrics data
+        metrics = None
+        if self.request_metrics:
+            from vllm.sequence import RequestMetrics
+
+            metrics = RequestMetrics(
+                arrival_time=None,  # Not needed for simplified metrics
+                last_token_time=None,
+                first_scheduled_time=None,
+                first_token_time=None,
+                time_in_queue=None,
+                finished_time=None,
+                scheduler_time=None,
+                model_forward_time=None,
+                model_execute_time=None,
+                spec_token_acceptance_counts=None,
+                priority_benefit_enabled=self.request_metrics.get('priority_enabled'),
+                requests_skipped_by_priority=self.request_metrics.get('requests_skipped_by_priority'),
+                preempted_requests_by_priority=self.request_metrics.get('preempted_requests_by_priority'),
+            )
+
         return RequestOutput(
             request_id=request_id,
             prompt=self.prompt,
@@ -195,6 +219,7 @@ class RequestState:
             prompt_logprobs=prompt_logprobs,
             outputs=outputs,
             finished=finished,
+            metrics=metrics,
             kv_transfer_params=kv_transfer_params,
             num_cached_tokens=num_cached_tokens,
         )
@@ -309,17 +334,17 @@ class OutputProcessor:
         1) Compute stats for logging
         2) Detokenize
         3) Create and handle RequestOutput objects:
-            * If there is a queue (for usage with AsyncLLM), 
+            * If there is a queue (for usage with AsyncLLM),
               put the RequestOutput objects into the queue for
               handling by the per-request generate() tasks.
 
-            * If there is no queue (for usage with LLMEngine), 
+            * If there is no queue (for usage with LLMEngine),
               return a list of RequestOutput objects.
 
         NOTE FOR DEVELOPERS
 
         vLLM V1 minimizes the number of python loops over the full
-        batch to ensure system overheads are minimized. This is the 
+        batch to ensure system overheads are minimized. This is the
         only function that should loop over EngineCoreOutputs.
 
         If you need to touch every element of the batch, do it from
@@ -339,6 +364,10 @@ class OutputProcessor:
             self._update_stats_from_output(req_state, engine_core_output,
                                            engine_core_timestamp,
                                            iteration_stats)
+
+            # Capture request metrics from engine core output for V1 priority tracking
+            if hasattr(engine_core_output, 'request_metrics') and engine_core_output.request_metrics:
+                req_state.request_metrics = engine_core_output.request_metrics
 
             new_token_ids = engine_core_output.new_token_ids
             finish_reason = engine_core_output.finish_reason

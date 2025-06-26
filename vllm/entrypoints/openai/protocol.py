@@ -22,7 +22,7 @@ from vllm.logger import init_logger
 from vllm.pooling_params import PoolingParams
 from vllm.sampling_params import (BeamSearchParams, GuidedDecodingParams,
                                   RequestOutputKind, SamplingParams)
-from vllm.sequence import Logprob
+from vllm.sequence import Logprob, RequestMetrics
 from vllm.utils import random_uuid, resolve_obj_by_qualname
 
 logger = init_logger(__name__)
@@ -104,6 +104,25 @@ class ModelList(OpenAIBaseModel):
 
 class PromptTokenUsageInfo(OpenAIBaseModel):
     cached_tokens: Optional[int] = None
+
+
+class RequestMetricsInfo(OpenAIBaseModel):
+    """Request metrics information exposed in API responses."""
+    priority_enabled: Optional[bool] = None
+    requests_skipped_by_priority: Optional[int] = None
+    preempted_requests_by_priority: Optional[int] = None
+
+    @classmethod
+    def from_request_metrics(cls, metrics: Optional["RequestMetrics"]) -> Optional["RequestMetricsInfo"]:
+        """Convert RequestMetrics to RequestMetricsInfo for API response."""
+        if metrics is None:
+            return None
+
+        return cls(
+            priority_enabled=metrics.priority_benefit_enabled,
+            requests_skipped_by_priority=metrics.requests_skipped_by_priority,
+            preempted_requests_by_priority=metrics.preempted_requests_by_priority,
+        )
 
 
 class UsageInfo(OpenAIBaseModel):
@@ -1250,6 +1269,7 @@ class CompletionResponse(OpenAIBaseModel):
     model: str
     choices: list[CompletionResponseChoice]
     usage: UsageInfo
+    metrics: Optional[RequestMetricsInfo] = None
     kv_transfer_params: Optional[dict[str, Any]] = Field(
         default=None, description="KVTransfer parameters.")
 
@@ -1275,6 +1295,7 @@ class CompletionStreamResponse(OpenAIBaseModel):
     model: str
     choices: list[CompletionResponseStreamChoice]
     usage: Optional[UsageInfo] = Field(default=None)
+    metrics: Optional[RequestMetricsInfo] = None
 
 
 class EmbeddingResponseData(OpenAIBaseModel):
@@ -1441,6 +1462,7 @@ class ChatCompletionResponse(OpenAIBaseModel):
     choices: list[ChatCompletionResponseChoice]
     usage: UsageInfo
     prompt_logprobs: Optional[list[Optional[dict[int, Logprob]]]] = None
+    metrics: Optional[RequestMetricsInfo] = None
     kv_transfer_params: Optional[dict[str, Any]] = Field(
         default=None, description="KVTransfer parameters.")
 
@@ -1467,6 +1489,7 @@ class ChatCompletionStreamResponse(OpenAIBaseModel):
     model: str
     choices: list[ChatCompletionResponseStreamChoice]
     usage: Optional[UsageInfo] = Field(default=None)
+    metrics: Optional[RequestMetricsInfo] = None
 
 
 class TranscriptionResponseStreamChoice(OpenAIBaseModel):

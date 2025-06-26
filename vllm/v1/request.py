@@ -74,6 +74,11 @@ class Request:
                      sampling_params.extra_args.get("kv_transfer_params"))
         self.kv_transfer_params: Optional[dict[str, Any]] = kv_params
 
+        # Priority benefit tracking fields
+        self.priority_benefit_enabled: Optional[bool] = None
+        self.requests_skipped_by_priority: Optional[int] = None
+        self.preempted_requests_by_priority: Optional[int] = None
+
         # Sanity check
         assert len(self.mm_inputs) == len(self.mm_positions)
         if self.mm_hashes:
@@ -163,6 +168,27 @@ class Request:
             return None
         events, self.events = self.events, []
         return events
+
+    def to_request_metrics(self) -> "RequestMetrics":
+        """Convert V1 Request to RequestMetrics for compatibility with legacy API."""
+        from vllm.sequence import RequestMetrics
+
+        # Create RequestMetrics with only priority benefit fields - no timing metrics
+        return RequestMetrics(
+            arrival_time=self.arrival_time,
+            last_token_time=self.arrival_time,  # Will be updated by engine
+            first_scheduled_time=None,
+            first_token_time=None,
+            time_in_queue=None,
+            finished_time=None,
+            scheduler_time=None,
+            model_forward_time=None,
+            model_execute_time=None,
+            spec_token_acceptance_counts=None,
+            priority_benefit_enabled=self.priority_benefit_enabled,
+            requests_skipped_by_priority=self.requests_skipped_by_priority,
+            preempted_requests_by_priority=self.preempted_requests_by_priority,
+        )
 
 
 class RequestStatus(enum.IntEnum):

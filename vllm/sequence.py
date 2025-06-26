@@ -119,6 +119,16 @@ class RequestMetrics:
                                       it means there were 10 forward passes in
                                       total, and there were 8, 4, 2 accepted
                                       tokens at 1st, 2nd, 3rd speculation step.
+        priority_benefit_enabled: Whether priority scheduling was enabled when
+                                  this request was processed.
+        requests_skipped_by_priority: Number of requests that this request
+                                      skipped in the queue due to having higher
+                                      priority. None if priority scheduling was
+                                      not enabled or the request didn't benefit.
+        preempted_requests_by_priority: Number of running requests that were
+                                        preempted to make room for this higher
+                                        priority request. None if no preemption
+                                        occurred due to priority.
     """
     arrival_time: float
     last_token_time: float
@@ -130,6 +140,9 @@ class RequestMetrics:
     model_forward_time: Optional[float] = None
     model_execute_time: Optional[float] = None
     spec_token_acceptance_counts: Optional[list[int]] = None
+    priority_benefit_enabled: Optional[bool] = None
+    requests_skipped_by_priority: Optional[int] = None
+    preempted_requests_by_priority: Optional[int] = None
 
 
 class SequenceDataDelta(
@@ -750,7 +763,10 @@ class SequenceGroup:
                                       first_token_time=None,
                                       time_in_queue=None,
                                       spec_token_acceptance_counts=[0] *
-                                      draft_size)
+                                      draft_size,
+                                      priority_benefit_enabled=None,
+                                      requests_skipped_by_priority=None,
+                                      preempted_requests_by_priority=None)
         self.last_token_latency = 0.0
         self.lora_request = lora_request
         self.prompt_logprobs: Optional[PromptLogprobs] = None

@@ -551,6 +551,8 @@ class Scheduler:
 
     def add_seq_group(self, seq_group: SequenceGroup) -> None:
         # Add sequence groups to the waiting queue.
+        # Set priority benefit metrics for new requests
+        self._set_priority_benefit_metrics(seq_group, 0, 0)
         self.waiting.append(seq_group)
 
     def _add_seq_group_to_running(self, seq_group: SequenceGroup) -> None:
@@ -965,6 +967,58 @@ class Scheduler:
         """
         return seq_group.priority, seq_group.arrival_time
 
+    def _calculate_requests_skipped_by_priority(
+            self,
+            scheduled_seq_group: SequenceGroup,
+            waiting_queue: Deque[SequenceGroup]) -> int:
+        """Calculate how many requests in the waiting queue would have been
+        scheduled before this higher priority request in FCFS order.
+
+        Args:
+            scheduled_seq_group: The sequence group that was scheduled
+            waiting_queue: The current waiting queue
+
+        Returns:
+            Number of requests that were skipped due to priority
+        """
+        if scheduled_seq_group.priority == 0:
+            # No priority benefit for default priority
+            return 0
+
+        scheduled_priority = self._get_priority(scheduled_seq_group)
+        skipped_count = 0
+
+        for waiting_seq_group in waiting_queue:
+            waiting_priority = self._get_priority(waiting_seq_group)
+            # If the waiting request would have been scheduled earlier in FCFS
+            # (lower arrival time), count it as skipped
+            if waiting_priority > scheduled_priority:
+                skipped_count += 1
+
+        return skipped_count
+
+    def _set_priority_benefit_metrics(
+            self,
+            seq_group: SequenceGroup,
+            requests_skipped: int = 0,
+            requests_preempted: int = 0) -> None:
+        """Set priority benefit metrics for a sequence group.
+
+        Args:
+            seq_group: The sequence group to update
+            requests_skipped: Number of requests skipped in waiting queue
+            requests_preempted: Number of running requests preempted
+        """
+        is_priority_enabled = self.scheduler_config.policy == "priority"
+        seq_group.metrics.priority_benefit_enabled = is_priority_enabled
+
+        if is_priority_enabled and seq_group.priority != 0:
+            seq_group.metrics.requests_skipped_by_priority = requests_skipped
+            seq_group.metrics.preempted_requests_by_priority = requests_preempted
+        else:
+            seq_group.metrics.requests_skipped_by_priority = None
+            seq_group.metrics.preempted_requests_by_priority = None
+
     def _schedule_priority_preemption(
         self,
         budget: SchedulingBudget,
@@ -992,6 +1046,8 @@ class Scheduler:
             num_new_tokens_uncached, _ = \
                 self._get_num_new_uncached_and_cached_tokens(
                 seq_group, SequenceStatus.WAITING, False, budget)
+
+            preempted_count_for_this_request = 0
 
             # Only preempt if priority inversion exists
             while running_queue and self._get_priority(
@@ -1021,6 +1077,15 @@ class Scheduler:
                 self._preempt(vseq_group, blocks_to_swap_out)
                 waiting_queue.appendleft(vseq_group)
                 force_preemption_count += 1
+                preempted_count_for_this_request += 1
+
+            # Store the preemption count in the sequence group for later use
+            # We use a temporary attribute to pass this information to the scheduler
+            if hasattr(seq_group, '_temp_preempted_count'):
+                seq_group._temp_preempted_count += preempted_count_for_this_request
+            else:
+                seq_group._temp_preempted_count = preempted_count_for_this_request
+
             # Put the sequence back into the waiting queue
             waiting_queue.appendleft(seq_group)
 
@@ -1181,6 +1246,20 @@ class Scheduler:
             if curr_loras is not None and lora_int_id > 0:
                 curr_loras.add(lora_int_id)
             waiting_queue.popleft()
+
+            # Calculate priority benefits before scheduling
+            requests_skipped = self._calculate_requests_skipped_by_priority(
+                seq_group, waiting_queue)
+            requests_preempted = getattr(seq_group, '_temp_preempted_count', 0)
+
+            # Set priority benefit metrics
+            self._set_priority_benefit_metrics(
+                seq_group, requests_skipped, requests_preempted)
+
+            # Clean up temporary attribute
+            if hasattr(seq_group, '_temp_preempted_count'):
+                delattr(seq_group, '_temp_preempted_count')
+
             self._allocate_and_set_running(seq_group)
 
             if partial_prefill_metadata is not None:
@@ -1217,6 +1296,14 @@ class Scheduler:
 
         # Queue requests that couldn't be scheduled.
         waiting_queue.extendleft(leftover_waiting_sequences)
+
+        # Set priority benefit metrics for any remaining waiting requests
+        # that didn't get scheduled this round
+        if self.scheduler_config.policy == "priority":
+            for seq_group in waiting_queue:
+                if seq_group.metrics.priority_benefit_enabled is None:
+                    self._set_priority_benefit_metrics(seq_group, 0, 0)
+
         if len(seq_groups) > 0:
             self.prev_prompt = True
 

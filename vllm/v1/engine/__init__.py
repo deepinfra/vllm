@@ -113,6 +113,9 @@ class EngineCoreOutput(
     # The number of tokens with prefix cache hits.
     num_cached_tokens: int = 0
 
+    # Priority benefit metrics from V1 scheduler
+    request_metrics: Optional[dict[str, Any]] = None
+
     @property
     def finished(self) -> bool:
         return self.finish_reason is not None

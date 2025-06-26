@@ -24,6 +24,7 @@ from vllm.entrypoints.openai.protocol import (CompletionLogProbs,
                                               CompletionStreamResponse,
                                               ErrorResponse,
                                               RequestResponseMetadata,
+                                              RequestMetricsInfo,
                                               UsageInfo)
 # yapf: enable
 from vllm.entrypoints.openai.serving_engine import (OpenAIServing,
@@ -305,7 +306,9 @@ class OpenAIServingCompletion(OpenAIServing):
             include_usage, include_continuous_usage = False, False
 
         try:
+            final_res: Optional[RequestOutput] = None
             async for prompt_idx, res in result_generator:
+                final_res = res  # Capture the final RequestOutput for metrics
                 prompt_token_ids = res.prompt_token_ids
                 prompt_logprobs = res.prompt_logprobs
                 prompt_text = res.prompt
@@ -412,7 +415,7 @@ class OpenAIServingCompletion(OpenAIServing):
                     model=model_name,
                     choices=[],
                     usage=final_usage_info,
-                )
+                    metrics=RequestMetricsInfo.from_request_metrics(final_res.metrics) if final_res else None)
                 final_usage_data = (final_usage_chunk.model_dump_json(
                     exclude_unset=False, exclude_none=True))
                 yield f"data: {final_usage_data}\n\n"
@@ -517,6 +520,7 @@ class OpenAIServingCompletion(OpenAIServing):
             model=model_name,
             choices=choices,
             usage=usage,
+            metrics=RequestMetricsInfo.from_request_metrics(final_res_batch[0].metrics),
             kv_transfer_params=final_res_batch[0].kv_transfer_params)
 
     def _create_completion_logprobs(

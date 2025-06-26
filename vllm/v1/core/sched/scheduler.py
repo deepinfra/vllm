@@ -274,6 +274,15 @@ class Scheduler(SchedulerInterface):
 
                     self.waiting.prepend_request(preempted_req)
                     preempted_reqs.append(preempted_req)
+
+                    # Track priority benefit: a higher priority request preempted this one
+                    if (self.policy == SchedulingPolicy.PRIORITY and
+                        request.priority < preempted_req.priority):
+                        # Initialize or increment preemption count for the higher priority request
+                        if not hasattr(request, '_temp_preempted_count'):
+                            request._temp_preempted_count = 0
+                        request._temp_preempted_count += 1
+
                     if preempted_req == request:
                         # No more request to preempt.
                         can_schedule = False
@@ -463,6 +472,24 @@ class Scheduler(SchedulerInterface):
                     skipped_waiting_requests.prepend_request(request)
                     request.status = RequestStatus.WAITING_FOR_REMOTE_KVS
                     continue
+
+                # Calculate priority benefit metrics before scheduling
+                requests_skipped = 0
+                requests_preempted = 0
+                if self.policy == SchedulingPolicy.PRIORITY and request.priority != 0:
+                    # Calculate requests skipped in waiting queue
+                    requests_skipped = self._calculate_requests_skipped_by_priority(
+                        request, self.waiting)
+                    # Get preemption count from temporary attribute
+                    requests_preempted = getattr(request, '_temp_preempted_count', 0)
+
+                # Set priority benefit metrics
+                self._set_priority_benefit_metrics(
+                    request, requests_skipped, requests_preempted)
+
+                # Clean up temporary preemption count
+                if hasattr(request, '_temp_preempted_count'):
+                    delattr(request, '_temp_preempted_count')
 
                 if request.use_structured_output:
                     structured_output_request_ids[request.request_id] = (
@@ -833,6 +860,11 @@ class Scheduler(SchedulerInterface):
                         events=request.take_events(),
                         kv_transfer_params=kv_transfer_params,
                         num_cached_tokens=request.num_cached_tokens,
+                        request_metrics={
+                            'priority_enabled': request.priority_benefit_enabled,
+                            'requests_skipped_by_priority': request.requests_skipped_by_priority,
+                            'preempted_requests_by_priority': request.preempted_requests_by_priority,
+                        }
                     ))
 
             else:
@@ -890,6 +922,9 @@ class Scheduler(SchedulerInterface):
         self.requests[request.request_id] = request
         if self.log_stats:
             request.record_event(EngineCoreEventType.QUEUED)
+
+        # Initialize priority benefit metrics for new request
+        self._set_priority_benefit_metrics(request)
 
     def finish_requests(
         self,
@@ -1073,3 +1108,55 @@ class Scheduler(SchedulerInterface):
         for req_id in (model_runner_output.finished_sending or ()):
             logger.debug("Finished sending KV transfer for request %s", req_id)
             self._free_blocks(self.requests[req_id])
+
+    def _calculate_requests_skipped_by_priority(
+            self,
+            scheduled_request: Request,
+            waiting_queue) -> int:
+        """Calculate how many requests in the waiting queue would have been
+        scheduled before this higher priority request in FCFS order.
+
+        Args:
+            scheduled_request: The request that was scheduled
+            waiting_queue: The current waiting queue
+
+        Returns:
+            Number of requests that were skipped due to priority
+        """
+        if scheduled_request.priority == 0:
+            # No priority benefit for default priority
+            return 0
+
+        scheduled_priority = (scheduled_request.priority, scheduled_request.arrival_time)
+        skipped_count = 0
+
+        for waiting_request in waiting_queue:
+            waiting_priority = (waiting_request.priority, waiting_request.arrival_time)
+            # If the waiting request would have been scheduled earlier in FCFS
+            # (lower arrival time), count it as skipped
+            if waiting_priority > scheduled_priority:
+                skipped_count += 1
+
+        return skipped_count
+
+    def _set_priority_benefit_metrics(
+            self,
+            request: Request,
+            requests_skipped: int = 0,
+            requests_preempted: int = 0) -> None:
+        """Set priority benefit metrics for a request.
+
+        Args:
+            request: The request to update
+            requests_skipped: Number of requests skipped in waiting queue
+            requests_preempted: Number of running requests preempted
+        """
+        is_priority_enabled = self.scheduler_config.policy == "priority"
+        request.priority_benefit_enabled = is_priority_enabled
+
+        if is_priority_enabled and request.priority != 0:
+            request.requests_skipped_by_priority = requests_skipped
+            request.preempted_requests_by_priority = requests_preempted
+        else:
+            request.requests_skipped_by_priority = None
+            request.preempted_requests_by_priority = None
