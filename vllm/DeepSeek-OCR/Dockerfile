@@ -10,6 +10,6 @@ RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir uv
 
 # Install vLLM from the commit-specific wheel index
-RUN uv pip install vllm \
+RUN pip install vllm \
     --torch-backend=auto \
     --extra-index-url https://wheels.vllm.ai/${VLLM_COMMIT}
