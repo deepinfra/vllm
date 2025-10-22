@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 
 # sanity check: show a file that exists in the repo but not in the slim wheel
 # (replace the path below with something you actually expect from that commit)
-RUN python - <<'PY'
+RUN python3 - <<'PY'
 import importlib, pkgutil, vllm, pathlib
 p = pathlib.Path(vllm.__file__).parent
 print("vllm lives at:", p)
