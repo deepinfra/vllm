@@ -30,5 +30,5 @@ RUN set -eux; \
 # Then do your existing requirements for DeepSeek-OCR under vLLM
 RUN pip install --no-cache-dir -r /usr/local/lib/python3.12/dist-packages/vllm/DeepSeek-OCR/requirements.txt
 
-# And flash-attn as you requested
+
 RUN pip install --no-cache-dir flash-attn==2.7.3 --no-build-isolation
