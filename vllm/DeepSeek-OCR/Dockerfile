@@ -9,11 +9,10 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 ARG VLLM_COMMIT=a0003b56b0b822c52bb0f3035c164370a802e6f5
 ENV VLLM_COMMIT=${VLLM_COMMIT}
 
-# tooling
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir uv git+https://github.com/pypa/setuptools_scm[toml]  && \
-    apt-get update && apt-get install -y --no-install-recommends git ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir --upgrade pip --root-user-action=ignore && \
+    pip install --no-cache-dir uv "setuptools-scm[toml]"
 
 # remove any preinstalled vllm to avoid shadowing
 RUN pip uninstall -y vllm || true
