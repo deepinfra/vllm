@@ -17,20 +17,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 # remove any preinstalled vllm to avoid shadowing
 RUN pip uninstall -y vllm || true
 
-# 1) install the prebuilt wheel (gives you the right CUDA binaries)
-RUN uv pip install --system "vllm" \
+# install the compiled wheel first (unchanged)
+RUN uv pip install --system vllm \
     --torch-backend=auto \
     --extra-index-url https://wheels.vllm.ai/${VLLM_COMMIT}
 
-# 2) overlay the **exact Git commit** as editable, without touching deps
-#    This places a .pth to the repo, so Python files come from the commit,
-#    while the compiled extension from the wheel remains in use.
-RUN git clone --depth=1 https://github.com/vllm-project/vllm.git /opt/vllm-src && \
+# then overlay exact Git commit as editable, choosing correct package dir
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone --depth=1 https://github.com/vllm-project/vllm.git /opt/vllm-src && \
     cd /opt/vllm-src && \
     git fetch --depth=1 origin ${VLLM_COMMIT} && \
     git checkout ${VLLM_COMMIT} && \
-    # vLLM’s Python package lives under the 'python' subdir in recent commits
-    uv pip install --system -e /opt/vllm-src/python --no-deps
+    if [ -f /opt/vllm-src/python/pyproject.toml ]; then \
+        PKG_DIR=/opt/vllm-src/python; \
+    elif [ -f /opt/vllm-src/pyproject.toml ]; then \
+        PKG_DIR=/opt/vllm-src; \
+    else \
+        echo "pyproject.toml not found in repo root or python/; vLLM changed layout again. Aborting." >&2; exit 1; \
+    fi && \
+    uv pip install --system -e "${PKG_DIR}" --no-deps
 
 # sanity check: show a file that exists in the repo but not in the slim wheel
 # (replace the path below with something you actually expect from that commit)
