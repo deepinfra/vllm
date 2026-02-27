@@ -81,6 +81,18 @@ class CompletionRequest(OpenAIBaseModel):
     # --8<-- [end:completion-sampling-params]
 
     # --8<-- [start:completion-extra-params]
+    data: dict[str, list[str]] | None = Field(
+        default=None,
+        description=(
+            "Optional multi-modal data to pass alongside the prompt. "
+            "A dictionary mapping modality names to lists of URLs or "
+            "base64 data URIs. For example: "
+            '{"image": ["http://example.com/image.jpg", '
+            '"data:image/png;base64,..."]}. '
+            "The prompt must contain the corresponding placeholder "
+            "tokens for each media item."
+        ),
+    )
     prompt_embeds: bytes | list[bytes] | None = None
     add_special_tokens: bool = Field(
         default=True,

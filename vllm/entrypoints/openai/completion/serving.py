@@ -5,10 +5,12 @@ import asyncio
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from collections.abc import Sequence as GenericSequence
-from typing import cast
+from typing import Any, cast
 
 import jinja2
 from fastapi import Request
+
+import vllm.envs as envs
 
 from vllm.engine.protocol import EngineClient
 from vllm.entrypoints.logger import RequestLogger
@@ -36,6 +38,13 @@ from vllm.entrypoints.utils import get_max_tokens, should_include_usage
 from vllm.exceptions import VLLMValidationError
 from vllm.logger import init_logger
 from vllm.logprobs import Logprob
+from vllm.multimodal.inputs import (
+    MultiModalDataDict,
+    VisionChunk,
+    VisionChunkImage,
+    VisionChunkVideo,
+)
+from vllm.multimodal.media import MEDIA_CONNECTOR_REGISTRY, MediaConnector
 from vllm.outputs import RequestOutput
 from vllm.renderers.inputs import TokPrompt
 from vllm.sampling_params import BeamSearchParams, SamplingParams
@@ -117,6 +126,16 @@ class OpenAIServingCompletion(OpenAIServing):
         except (ValueError, TypeError, RuntimeError, jinja2.TemplateError) as e:
             logger.exception("Error in preprocessing prompt inputs")
             return self.create_error_response(e)
+
+        if request.data:
+            try:
+                mm_data = await self._fetch_multi_modal_data(request.data)
+                for prompt in engine_prompts:
+                    if "prompt_embeds" not in prompt:
+                        prompt["multi_modal_data"] = mm_data
+            except (ValueError, TypeError, RuntimeError) as e:
+                logger.exception("Error fetching multi-modal data")
+                return self.create_error_response(e)
 
         return engine_prompts
 
@@ -698,3 +717,82 @@ class OpenAIServingCompletion(OpenAIServing):
             tokens=out_tokens,
             top_logprobs=out_top_logprobs,
         )
+
+    def _get_media_connector(self) -> MediaConnector:
+        multimodal_config = self.model_config.multimodal_config
+        media_io_kwargs: dict[str, dict[str, Any]] | None = getattr(
+            multimodal_config, "media_io_kwargs", None
+        )
+        connector: MediaConnector = MEDIA_CONNECTOR_REGISTRY.load(
+            envs.VLLM_MEDIA_CONNECTOR,
+            media_io_kwargs=media_io_kwargs,
+            allowed_local_media_path=(self.model_config.allowed_local_media_path),
+            allowed_media_domains=self.model_config.allowed_media_domains,
+        )
+        return connector
+
+    async def _fetch_multi_modal_data(
+        self,
+        data: dict[str, list[str]],
+    ) -> MultiModalDataDict:
+        """Fetch multi-modal data from URLs and return as MultiModalDataDict."""
+        connector = self._get_media_connector()
+        mm_data: dict[str, list[Any]] = {}
+
+        for modality, urls in data.items():
+            if modality == "image":
+                images = await asyncio.gather(
+                    *(connector.fetch_image_async(url) for url in urls)
+                )
+                mm_data["image"] = list(images)
+            elif modality == "audio":
+                audios = await asyncio.gather(
+                    *(connector.fetch_audio_async(url) for url in urls)
+                )
+                mm_data["audio"] = list(audios)
+            elif modality == "video":
+                videos = await asyncio.gather(
+                    *(connector.fetch_video_async(url) for url in urls)
+                )
+                mm_data["video"] = list(videos)
+            else:
+                raise ValueError(
+                    f"Unsupported modality: {modality!r}. "
+                    "Supported modalities: 'image', 'audio', 'video'."
+                )
+
+        # If the model uses unified vision_chunk modality (e.g. Kimi K2.5),
+        # convert image/video data to VisionChunk items
+        use_vision_chunk = getattr(
+            self.model_config.hf_config, "use_unified_vision_chunk", False
+        )
+        if use_vision_chunk:
+            vision_chunks: list[VisionChunk] = []
+            if "image" in mm_data:
+                for img in mm_data.pop("image"):
+                    # Unwrap MediaWithBytes to get plain PIL Image
+                    image_data = img.media if hasattr(img, "media") else img
+                    vision_chunks.append(
+                        VisionChunkImage(type="image", image=image_data, uuid=None)
+                    )
+            if "video" in mm_data:
+                for video in mm_data.pop("video"):
+                    # Unwrap MediaWithBytes to get plain media
+                    video_data = video.media if hasattr(video, "media") else video
+                    vision_chunks.append(
+                        VisionChunkVideo(
+                            type="video_chunk",
+                            video_chunk=(
+                                video_data
+                                if isinstance(video_data, list)
+                                else [video_data]
+                            ),
+                            uuid=None,
+                            video_idx=0,
+                            prompt="",
+                        )
+                    )
+            if vision_chunks:
+                mm_data["vision_chunk"] = vision_chunks
+
+        return mm_data
