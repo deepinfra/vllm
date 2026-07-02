@@ -79,32 +79,35 @@ class DispatchPooler(Pooler):
         return set(self.poolers_by_task)
 
     def get_pooling_updates(self, task: PoolingTask) -> PoolingParamsUpdate:
-        return self.poolers_by_task[task].get_pooling_updates(task)
+        return PoolingParamsUpdate(requires_token_ids=True)
+
+
 
     def forward(
         self,
         hidden_states: torch.Tensor,
         pooling_metadata: PoolingMetadata,
     ) -> PoolerOutput:
-        poolers_by_task = self.poolers_by_task
 
-        outputs = list[torch.Tensor | None]()
-        offset = 0
-        for task, group in groupby(pooling_metadata.tasks):
-            if not (pooler := poolers_by_task.get(task)):
-                raise ValueError(
-                    f"Unsupported task: {task!r} "
-                    f"Supported tasks: {self.get_supported_tasks()}"
-                )
+        outputs: list[torch.Tensor] = []
+        dense_pooler = self.poolers_by_task['embed']
+        colbert_pooler = self.poolers_by_task['token_embed']
+        sparse_pooler = self.poolers_by_task['token_classify']
+        dense = dense_pooler(hidden_states, pooling_metadata)
+        colbert = colbert_pooler(hidden_states, pooling_metadata)
+        sparse = sparse_pooler(hidden_states, pooling_metadata)
 
-            num_items = len(list(group))
-            group_output: PoolerOutput = pooler(
-                hidden_states,
-                pooling_metadata[offset : offset + num_items],
-            )
+        batch_size = len(pooling_metadata.prompt_lens)
 
-            outputs.extend(group_output)
-            offset += num_items
+        for i in range(batch_size):
+            dense_req = dense[i].flatten().to(torch.float32)
+            colbert_req = colbert[i].flatten().to(torch.float32)
+            sparse_req = sparse[i].flatten().to(torch.float32)
+
+            seq_len = pooling_metadata.prompt_lens[i].item()
+            metadata = torch.tensor([seq_len], dtype= torch.float32, device= hidden_states.device)
+            output_req = torch.cat([metadata, dense_req, colbert_req, sparse_req], dim=0)
+            outputs.append(output_req)
 
         return outputs
 
