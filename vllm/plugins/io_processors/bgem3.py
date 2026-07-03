@@ -1,10 +1,9 @@
 from typing import Any, Dict, TypedDict, NotRequired
 
 from collections.abc import Sequence
-from vllm import PoolingRequestOutput, PoolingOutput, PoolingParams
+from vllm import PoolingRequestOutput, PoolingParams
 from vllm.config import VllmConfig
 from vllm.plugins.io_processors import IOProcessor
-from vllm.renderers import BaseRenderer
 import asyncio
 
 
@@ -23,8 +22,8 @@ class EmbeddingOutput(TypedDict):
 
 class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
 
-    def __init__(self, config: VllmConfig, renderer: BaseRenderer, ):
-        super().__init__(config, renderer)
+    def __init__(self, config: VllmConfig):
+        super().__init__(config)
 
     def parse_data(self, data: EmbeddingPayload) -> EmbeddingPayload:
         return data
@@ -50,19 +49,19 @@ class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
 
         for output in model_output:
             out_data = output.outputs.data[:3]
-            seq_len = output.outputs.data[3].item()
+            seq_len = int(output.outputs.data[3].item())
 
             req_output: dict[str, Any] = {}
             offset = 4
 
             if out_data[0]:
-                req_output["dense"] = output.outputs.data[offset: 1028].tolist()
-                offset = 1028
+                req_output["dense"] = output.outputs.data[offset: offset + 1024].tolist()
+                offset += 1024
             if out_data[1]:
                 colbert_sqz = output.outputs.data[offset: offset + (seq_len - 1) * 1024]
-                colbert = colbert_sqz.reshape((int(seq_len) - 1), 1024)
+                colbert = colbert_sqz.reshape(seq_len - 1, 1024)
                 req_output["colbert"] = colbert.tolist()
-                offset = offset + (seq_len - 1) * 1024
+                offset += (seq_len - 1) * 1024
 
             if out_data[2]:
                 sparse_weights = output.outputs.data[offset: offset + seq_len - 2].tolist()
