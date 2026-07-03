@@ -89,24 +89,41 @@ class DispatchPooler(Pooler):
         pooling_metadata: PoolingMetadata,
     ) -> PoolerOutput:
 
-        outputs: list[torch.Tensor] = []
-        dense_pooler = self.poolers_by_task['embed']
-        colbert_pooler = self.poolers_by_task['token_embed']
-        sparse_pooler = self.poolers_by_task['token_classify']
-        dense = dense_pooler(hidden_states, pooling_metadata)
-        colbert = colbert_pooler(hidden_states, pooling_metadata)
-        sparse = sparse_pooler(hidden_states, pooling_metadata)
 
+
+        outputs: list[torch.Tensor] = []
         batch_size = len(pooling_metadata.prompt_lens)
 
+        dense_pooler = self.poolers_by_task['embed']
+        dense = dense_pooler(hidden_states, pooling_metadata)
+
+        colbert_pooler = self.poolers_by_task['token_embed']
+        colbert = colbert_pooler(hidden_states, pooling_metadata)
+
+        sparse_pooler = self.poolers_by_task['token_classify']
+        sparse = sparse_pooler(hidden_states, pooling_metadata)
+
+
         for i in range(batch_size):
-            dense_req = dense[i].flatten().to(torch.float32)
-            colbert_req = colbert[i].flatten().to(torch.float32)
-            sparse_req = sparse[i].flatten().to(torch.float32)
+
+            out_mask = pooling_metadata.pooling_params[i].extra_kwargs["outputs"]
+            out_data = torch.zeros([3], dtype=torch.float32, device= hidden_states.device)
+            dense_req = torch.empty(0, dtype=torch.float32, device= hidden_states.device)
+            colbert_req = torch.empty(0, dtype=torch.float32, device= hidden_states.device)
+            sparse_req = torch.empty(0, dtype=torch.float32, device= hidden_states.device)
+            if out_mask["dense"]:
+                dense_req = dense[i].flatten().to(torch.float32)
+                out_data[0] = 1
+            if out_mask["colbert"]:
+                colbert_req = colbert[i].flatten().to(torch.float32)
+                out_data[1] = 1
+            if out_mask["sparse"]:
+                sparse_req = sparse[i].flatten().to(torch.float32)
+                out_data[2] = 1
 
             seq_len = pooling_metadata.prompt_lens[i].item()
-            metadata = torch.tensor([seq_len], dtype= torch.float32, device= hidden_states.device)
-            output_req = torch.cat([metadata, dense_req, colbert_req, sparse_req], dim=0)
+            metadata_len = torch.tensor([seq_len], dtype= torch.float32, device= hidden_states.device)
+            output_req = torch.cat([out_data, metadata_len, dense_req, colbert_req, sparse_req], dim=0)
             outputs.append(output_req)
 
         return outputs
