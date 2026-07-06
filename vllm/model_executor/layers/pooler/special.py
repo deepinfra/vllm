@@ -96,17 +96,24 @@ class DispatchPooler(Pooler):
 
         dense_pooler = self.poolers_by_task['embed']
         dense = dense_pooler(hidden_states, pooling_metadata)
-
+       
+        for p in pooling_metadata.pooling_params:
+            p.use_activation = False
         colbert_pooler = self.poolers_by_task['token_embed']
         colbert = colbert_pooler(hidden_states, pooling_metadata)
-
+        for p in pooling_metadata.pooling_params:
+            p.use_activation = True
         sparse_pooler = self.poolers_by_task['token_classify']
         sparse = sparse_pooler(hidden_states, pooling_metadata)
 
 
         for i in range(batch_size):
 
-            out_mask = pooling_metadata.pooling_params[i].extra_kwargs["outputs"]
+            # Warmup (_dummy_pooler_run) calls the pooler with dummy metadata that has
+            # no "outputs" flag. Default to emitting all three heads so the dummy run
+            # both survives and exercises the largest output (correct memory profiling).
+            extra = pooling_metadata.pooling_params[i].extra_kwargs or {}
+            out_mask = extra.get("outputs") or {"dense": True, "colbert": True, "sparse": True}
             out_data = torch.zeros([3], dtype=torch.float32, device= hidden_states.device)
             dense_req = torch.empty(0, dtype=torch.float32, device= hidden_states.device)
             colbert_req = torch.empty(0, dtype=torch.float32, device= hidden_states.device)
