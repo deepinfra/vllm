@@ -94,15 +94,12 @@ class DispatchPooler(Pooler):
         outputs: list[torch.Tensor] = []
         batch_size = len(pooling_metadata.prompt_lens)
 
+        for p in pooling_metadata.pooling_params:
+            p.use_activation = True #always normalize dense and colbert to match the processor_flag_embeddings implementation
         dense_pooler = self.poolers_by_task['embed']
         dense = dense_pooler(hidden_states, pooling_metadata)
-       
-        for p in pooling_metadata.pooling_params:
-            p.use_activation = False
         colbert_pooler = self.poolers_by_task['token_embed']
         colbert = colbert_pooler(hidden_states, pooling_metadata)
-        for p in pooling_metadata.pooling_params:
-            p.use_activation = True
         sparse_pooler = self.poolers_by_task['token_classify']
         sparse = sparse_pooler(hidden_states, pooling_metadata)
 
