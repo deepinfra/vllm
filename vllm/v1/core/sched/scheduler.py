@@ -52,7 +52,11 @@ from vllm.v1.core.sched.request_queue import (
 )
 from vllm.v1.core.sched.utils import check_stop, remove_all
 from vllm.v1.engine import EngineCoreEventType, EngineCoreOutput, EngineCoreOutputs
-from vllm.v1.kv_cache_interface import AttentionSpec, KVCacheConfig
+from vllm.v1.kv_cache_interface import (
+    AttentionSpec,
+    FullAttentionSpec,
+    KVCacheConfig,
+)
 from vllm.v1.metrics.perf import ModelMetrics, PerfStats
 from vllm.v1.metrics.stats import PrefixCacheStats, SchedulerStats
 from vllm.v1.outputs import DraftTokenIds, KVConnectorOutput, ModelRunnerOutput
@@ -137,9 +141,34 @@ class Scheduler(SchedulerInterface):
             )
             self.recompute_kv_load_failures = kv_load_failure_policy == "recompute"
 
+        # deepinfra: identify the main-attention KV cache group for the local
+        # indexer. Hybrid models (e.g. DeepSeek DSA/MTP side caches) emit KV
+        # events once per group at different block granularities, with hashes
+        # SHARED across groups -- only the main full-attention group's stream
+        # is a valid prefix-cache signal, and feeding other groups' removals
+        # would erase its blocks from the index. Mirrors dynamo's
+        # select_main_attention_block_size (first full/MLA/sink-attention
+        # group) and the TRT-LLM tee's max-window filter.
+        kv_main_group_idx, kv_main_block_size = 0, block_size
+        for gid, group in enumerate(kv_cache_config.kv_cache_groups):
+            if isinstance(group.kv_cache_spec, FullAttentionSpec):
+                kv_main_group_idx = gid
+                kv_main_block_size = group.kv_cache_spec.block_size
+                break
+        else:
+            # Fallback: the group matching the configured cache block size.
+            for gid, group in enumerate(kv_cache_config.kv_cache_groups):
+                if group.kv_cache_spec.block_size == self.cache_config.block_size:
+                    kv_main_group_idx = gid
+                    kv_main_block_size = group.kv_cache_spec.block_size
+                    break
+
         self.kv_event_publisher = EventPublisherFactory.create(
             self.kv_events_config,
             self.parallel_config.data_parallel_index,
+            block_size=kv_main_block_size,
+            worker_id=self.parallel_config.data_parallel_index,
+            main_group_idx=kv_main_group_idx,
         )
         self.ec_connector = None
         if self.vllm_config.ec_transfer_config is not None:

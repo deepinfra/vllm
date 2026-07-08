@@ -47,6 +47,20 @@ class KVEventsConfig:
     this topic to receive events.
     """
 
+    enable_local_indexer: bool = False
+    """If True, feed every published event into an in-process Dynamo
+    LocalKvIndexer (radix tree + replay ring buffer + snapshot) and serve
+    recovery over HTTP at ``kv_recover_port``. Requires the ``kv_local_indexer``
+    wheel. Switches the publisher to one-event-per-batch sends so seq ==
+    event_id. Replaces the ZMQ ROUTER replay path for recovery.
+    """
+
+    kv_recover_port: int | None = None
+    """Base TCP port for the ``GET /kv_recover?start=&end=`` recovery HTTP
+    server (offset by data_parallel_rank). Only used when
+    ``enable_local_indexer`` is True.
+    """
+
     def __post_init__(self):
         if self.publisher is None:
             self.publisher = "zmq" if self.enable_kv_cache_events else "null"
