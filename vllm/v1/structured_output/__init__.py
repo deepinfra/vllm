@@ -275,16 +275,40 @@ class StructuredOutputManager:
                 apply_bitmask = self.should_fill_bitmask(request)
 
                 state_advancements = 0
+                spec_diverged = False
                 req_tokens = scheduled_spec_decode_tokens.get(req_id, ())
                 for token in itertools.chain(req_tokens, (-1,)):
                     self._fill_bitmasks(((grammar, cumulative_index, apply_bitmask),))
                     if token == -1:
                         # Stop advancing the grammar once we hit a padding token.
                         apply_bitmask = False
-                    if apply_bitmask and not grammar.is_terminated():
+                    if (
+                        apply_bitmask
+                        and not grammar.is_terminated()
+                        and not spec_diverged
+                    ):
                         accepted = grammar.accept_tokens(req_id, [token])
-                        assert accepted, (token, req_id, scheduled_spec_decode_tokens)
-                        state_advancements += 1
+                        # PATCH: under speculative decoding, the grammar
+                        # may reject a speculated token (e.g. a token past
+                        # EOS, a token that doesn't match a strict schema,
+                        # or — critically — the FIRST sampled token after
+                        # </think> when reasoning_ended just flipped True
+                        # and the spec batch was generated unconstrained).
+                        # The original code asserts here (kills the engine);
+                        # an earlier patch did `break` which skipped
+                        # _fill_bitmasks for the remaining positions —
+                        # including the BONUS (non-spec) position that
+                        # the GPU runner uses for the actual sampled
+                        # token, leaving the model's first post-</think>
+                        # token unconstrained. Now: stop advancing but
+                        # keep filling subsequent bitmasks at the matcher's
+                        # current state so the bonus bitmask reflects the
+                        # right grammar state (initial state if no spec
+                        # was accepted, or the post-accepted state).
+                        if not accepted:
+                            spec_diverged = True
+                        else:
+                            state_advancements += 1
                     cumulative_index += 1
                 if state_advancements > 0:
                     grammar.rollback(state_advancements)

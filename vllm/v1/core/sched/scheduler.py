@@ -1364,6 +1364,30 @@ class Scheduler(SchedulerInterface):
                 sampled_token_ids[req_index] if sampled_token_ids else []
             )
 
+            # PATCH: structured-output + thinking + spec-decode boundary.
+            # When </think> appears mid-batch in a multi-token spec output,
+            # the tokens AFTER </think> were sampled in the same forward pass
+            # whose bitmask was determined at the start of the step (when
+            # reasoning_ended was still False), so they are unconstrained by
+            # the JSON schema. Truncate at </think> so those positions get
+            # re-sampled in the next step with the bitmask correctly applied.
+            struct_req = request.structured_output_request
+            if (
+                struct_req is not None
+                and self.structured_output_manager.reasoner_cls is not None
+                and not struct_req.reasoning_ended
+                and len(generated_token_ids) > 1
+            ):
+                inner = getattr(
+                    self.structured_output_manager._get_reasoner(request), "_parser", None
+                )
+                end_token_id = getattr(inner, "end_token_id", None)
+                if end_token_id is not None:
+                    for boundary_idx, tid in enumerate(generated_token_ids):
+                        if tid == end_token_id:
+                            del generated_token_ids[boundary_idx + 1 :]
+                            break
+
             scheduled_spec_token_ids = (
                 scheduler_output.scheduled_spec_decode_tokens.get(req_id)
             )
