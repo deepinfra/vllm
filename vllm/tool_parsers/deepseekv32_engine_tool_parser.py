@@ -6,3 +6,8 @@ from vllm.parser.engine.registered_adapters import DeepSeekV32ParserToolAdapter
 
 class DeepSeekV32EngineToolParser(DeepSeekV32ParserToolAdapter):  # type: ignore[valid-type, misc]
     structural_tag_model = "deepseek_v3_2"
+
+    # DSML output is not JSON, so vLLM's "required"/named-tool-choice JSON
+    # path produces garbage (raw DSML leaked into arguments). Force the
+    # auto-tool-choice path so this parser actually runs.
+    supports_required_and_named = False
