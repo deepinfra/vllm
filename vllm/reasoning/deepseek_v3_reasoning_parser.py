@@ -31,8 +31,24 @@ class DeepSeekV3ReasoningParser(ReasoningParser):
         enable_thinking = bool(chat_kwargs.get("enable_thinking", False))
         thinking = thinking or enable_thinking
 
+        # PATCH: when constructed without any chat_template_kwargs (the
+        # engine-side StructuredOutputManager builds its reasoner this way
+        # at startup, with no per-request kwargs), fall back to the R1
+        # parser. The R1 parser checks for actual <think>/</think> token
+        # ids in the stream, which correctly distinguishes:
+        #   - non-thinking prompts (DSv4 chat template embeds </think> in
+        #     the prompt) → is_reasoning_end(prompt) = True → structured
+        #     output kicks in immediately. ✓
+        #   - thinking prompts (chat template embeds <think> only) →
+        #     is_reasoning_end(prompt) = False → structured output waits
+        #     until the model emits </think>. ✓
+        # IdentityReasoningParser would always say "reasoning done", which
+        # makes xgrammar constrain from token 1 even for thinking
+        # requests, suppressing reasoning entirely.
+        has_chat_kwargs = "chat_template_kwargs" in kwargs
+
         self._parser: ReasoningParser
-        if thinking:
+        if thinking or not has_chat_kwargs:
             self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
         else:
             self._parser = IdentityReasoningParser(tokenizer, *args, **kwargs)

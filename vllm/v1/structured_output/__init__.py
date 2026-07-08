@@ -282,7 +282,7 @@ class StructuredOutputManager:
                 history_len = 0
 
                 state_advancements = 0
-                post_reasoning_end_in_window = False
+                spec_diverged = False
                 req_tokens = scheduled_spec_decode_tokens.get(req_id, ())
                 for i, token in enumerate(req_tokens):
                     self._fill_bitmasks(((grammar, cumulative_index, apply_bitmask),))
@@ -310,15 +310,26 @@ class StructuredOutputManager:
                             # the bitmask and are not guaranteed valid.
                             apply_bitmask = True
                             advance_grammar = False
-                            post_reasoning_end_in_window = True
-                    if advance_grammar and not grammar.is_terminated():
+                    if (
+                        advance_grammar
+                        and not grammar.is_terminated()
+                        and not spec_diverged
+                    ):
                         accepted = grammar.accept_tokens(req_id, [token])
+                        # PATCH: under speculative decoding, the grammar
+                        # may reject a speculated token (e.g. a token past
+                        # EOS, or one that doesn't match a strict schema)
+                        # even outside the post-</think> window. The
+                        # original code raises here (kills the engine).
+                        # Instead: stop advancing but keep filling
+                        # subsequent bitmask rows — including the bonus
+                        # position — at the matcher's current state, so
+                        # the rejected positions are re-sampled under the
+                        # right grammar state.
                         if accepted:
                             state_advancements += 1
-                        elif not post_reasoning_end_in_window:
-                            raise AssertionError(
-                                (token, req_id, scheduled_spec_decode_tokens)
-                            )
+                        else:
+                            spec_diverged = True
                     cumulative_index += 1
                 # Diffusion LLMs don't sample a bonus token after the
                 # scheduled positions, so skip its bitmask in that case.
