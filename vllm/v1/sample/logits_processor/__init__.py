@@ -203,11 +203,16 @@ def build_logitsprocs(
     if vllm_config.speculative_config:
         if custom_logitsprocs:
             raise ValueError(STR_SPEC_DEC_REJECTS_LOGITSPROCS)
-        logger.warning(
-            "min_p and logit_bias parameters won't work with speculative decoding."
-        )
+        # PATCH: load all builtin processors even with spec decoding. The
+        # rejection sampler still only applies MinTokens during draft
+        # verification (correctness reasons), but the scheduler routes any
+        # request with min_p / logit_bias through the no-spec path
+        # (spec_token_ids cleared), where the bonus-token sampler applies
+        # all processors normally. So these processors must be loaded so
+        # they can take effect for the no-spec requests.
         return LogitsProcessors(
-            [MinTokensLogitsProcessor(vllm_config, device, is_pin_memory)]
+            ctor(vllm_config, device, is_pin_memory)
+            for ctor in BUILTIN_LOGITS_PROCESSORS
         )
 
     custom_logitsprocs_classes = _load_custom_logitsprocs(custom_logitsprocs)

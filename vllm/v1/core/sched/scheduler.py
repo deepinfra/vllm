@@ -1674,6 +1674,25 @@ class Scheduler(SchedulerInterface):
                 # in the decoder's KV cache.
                 self.encoder_cache_manager.free_encoder_input(request, input_id)
 
+    @staticmethod
+    def _request_opts_out_of_spec_decode(request) -> bool:
+        # PATCH: requests with min_p > 0 or logit_bias must take the
+        # no-spec sampling path because the rejection sampler does not
+        # apply MinP / LogitBias logits processors during draft
+        # verification (would break rejection-sampling correctness).
+        # The bonus-token sampler does apply them, so as long as no
+        # spec tokens are scheduled for the request, the output is
+        # correct. Other requests in the same batch still benefit
+        # from spec decoding.
+        sp = request.sampling_params
+        if sp is None:
+            return False
+        if sp.min_p and sp.min_p > 1e-5:
+            return True
+        if sp.logit_bias:
+            return True
+        return False
+
     def update_draft_token_ids(self, draft_token_ids: DraftTokenIds) -> None:
         for req_id, spec_token_ids in zip(
             draft_token_ids.req_ids,
@@ -1686,6 +1705,11 @@ class Scheduler(SchedulerInterface):
 
             if request.is_prefill_chunk:
                 # Ignore draft tokens for prefill chunks.
+                if request.spec_token_ids:
+                    request.spec_token_ids = []
+                continue
+
+            if self._request_opts_out_of_spec_decode(request):
                 if request.spec_token_ids:
                     request.spec_token_ids = []
                 continue
@@ -1719,8 +1743,12 @@ class Scheduler(SchedulerInterface):
             # Trim drafts to scheduled number of spec tokens
             # (needed for chunked prefill case for example).
             del spec_token_ids[orig_num_spec_tokens:]
+            if self._request_opts_out_of_spec_decode(request):
+                # PATCH: drop all drafts so the request takes the no-spec
+                # sampling path (see _request_opts_out_of_spec_decode).
+                spec_token_ids = []
             # Filter out spec tokens which do not adhere to the grammar.
-            if self.structured_output_manager.should_advance(request):
+            elif self.structured_output_manager.should_advance(request):
                 metadata = request.structured_output_request
                 assert metadata is not None and metadata.grammar is not None
                 spec_token_ids = metadata.grammar.validate_tokens(spec_token_ids)
