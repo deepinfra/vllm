@@ -872,12 +872,12 @@ class SamplingParams(
         if speculative_config is None:
             return
 
-        # Some sampling parameters are not yet compatible with spec decoding.
-        if self.min_p > _SAMPLING_EPS or self.logit_bias:
-            raise ValueError(
-                "The min_p and logit_bias sampling parameters "
-                "are not yet supported with speculative decoding."
-            )
+        # PATCH: do not reject min_p / logit_bias here. The scheduler clears
+        # spec_token_ids for any request that sets them, so those requests
+        # take the no-spec sampling path where MinPLogitsProcessor and
+        # LogitBiasLogitsProcessor are applied correctly. Other requests
+        # still benefit from spec decoding.
+        return
 
     def _validate_diffusion(self, model_config: ModelConfig) -> None:
         if not model_config.is_diffusion:
