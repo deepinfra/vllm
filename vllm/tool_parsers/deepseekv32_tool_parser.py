@@ -49,6 +49,11 @@ class DeepSeekV32ToolParser(ToolParser):
     tool_call_start_token: str = "<｜DSML｜function_calls>"
     tool_call_end_token: str = "</｜DSML｜function_calls>"
 
+    # DSML output is not JSON, so vLLM's "required"/named-tool-choice JSON
+    # path produces garbage (raw DSML leaked into arguments). Force the
+    # auto-tool-choice path so this parser actually runs.
+    supports_required_and_named = False
+
     def __init__(self, tokenizer: TokenizerLike, tools: list[Tool] | None = None):
         super().__init__(tokenizer, tools)
 
