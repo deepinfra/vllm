@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from vllm import PoolingRequestOutput, PoolingParams
 from vllm.plugins.io_processors import IOProcessor
 import asyncio
-
+from transformers import AutoTokenizer
 
 class EmbeddingPayload(TypedDict):
     model: str
@@ -32,13 +32,19 @@ class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
     def pre_process(self, prompt: EmbeddingPayload, request_id: str | None = None, **kwargs) -> list[str]:
         if not (task := asyncio.current_task()):
             raise RuntimeError(f"BGEM3IOProcessorPlugin.pre_process must be called from within an async task.")
-
+ 
         task._bge_flags = {"dense": prompt["outputs"].get("dense"),
                            "colbert": prompt["outputs"].get("colbert"),
                            "sparse": prompt["outputs"].get("sparse"),
                            "normalize": prompt.get("normalize")}
 
-        return prompt["input"] if isinstance(prompt["input"], list) else [prompt["input"]]
+        
+        input_texts =  prompt["input"] if isinstance(prompt["input"], list) else [prompt["input"]]
+        tokenizer = AutoTokenizer.from_pretrained(self.vllm_config.model_config.tokenizer)
+        task._full_input_lengths = [len(seq) for seq in tokenizer(input_texts)["input_ids"]]
+        
+
+        return input_texts
 
     def merge_pooling_params(self, params: PoolingParams | None = None) -> PoolingParams:
         out_flags = asyncio.current_task()._bge_flags
@@ -49,11 +55,15 @@ class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
 
         result: list[dict[str, Any]] = []
 
-        for output in model_output:
+        if not (task := asyncio.current_task()):
+            raise RuntimeError(f"BGEM3IOProcessorPlugin.post_process must be called from within an async task.")
+
+        for i, output in enumerate(model_output):
             out_data = output.outputs.data[:3]
             seq_len = int(output.outputs.data[3].item())
 
-            req_output: dict[str, Any] = {}
+            req_output: dict[str, Any] = {} 
+            req_output["input_tokens"] = task._full_input_lengths[i]
             offset = 4
 
             if out_data[0]:
@@ -71,8 +81,8 @@ class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
                 vocab_size = self.vllm_config.model_config.hf_config.vocab_size
                 token_ids = output.prompt_token_ids[1:-1]
                 sparse_vec = [0.0] * vocab_size
-                for i, token_id in enumerate(token_ids):
-                    w = sparse_weights[i]
+                for idx, token_id in enumerate(token_ids):
+                    w = sparse_weights[idx]
                     if w > sparse_vec[token_id] and token_id != unk_tok_id:
                         sparse_vec[token_id] = w
                 req_output["sparse"] = sparse_vec
