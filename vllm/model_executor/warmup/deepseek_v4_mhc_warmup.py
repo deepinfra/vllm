@@ -112,6 +112,40 @@ def _find_deepseek_v4_model(model: torch.nn.Module) -> torch.nn.Module | None:
     return None
 
 
+def _find_first_direct_mhc_layer(model: torch.nn.Module) -> torch.nn.Module | None:
+    """Find a decoder layer that calls the mHC TileLang kernels directly.
+
+    The NVIDIA DSv4 model (vllm/models/deepseek_v4/nvidia/model.py) does not
+    wrap the kernels in ``hc_pre``/``hc_post`` ops; its forward calls
+    ``mhc_pre_tilelang`` / ``mhc_fused_post_pre_tilelang`` free functions with
+    the fused input-norm (``norm_weight=``).
+    """
+    for module in model.modules():
+        if module.__class__.__name__ != "DeepseekV4DecoderLayer":
+            continue
+        if all(
+            hasattr(module, attr)
+            for attr in (
+                "hc_attn_fn",
+                "hc_attn_scale",
+                "hc_attn_base",
+                "hc_ffn_fn",
+                "hc_ffn_scale",
+                "hc_ffn_base",
+                "attn_norm",
+                "ffn_norm",
+                "hc_mult",
+                "hidden_size",
+                "rms_norm_eps",
+                "hc_eps",
+                "hc_post_alpha",
+                "hc_sinkhorn_iters",
+            )
+        ):
+            return module
+    return None
+
+
 def _warmup_layer_mhc(
     layer: torch.nn.Module,
     token_sizes: list[int],
@@ -141,6 +175,105 @@ def _warmup_layer_mhc(
                 base,
             )
             layer.hc_post(layer_input, residual_slice, post_mix, comb_mix)
+
+
+def _warmup_direct_layer_mhc(
+    layer: torch.nn.Module,
+    token_sizes: list[int],
+) -> None:
+    """Warm the kernel variants the NVIDIA DSv4 forward actually dispatches.
+
+    Mirrors ``DeepseekV4DecoderLayer.forward``: ``mhc_pre_tilelang`` with the
+    fused attn-norm (compiles ``mhc_pre_big_fuse_with_norm_tilelang`` per
+    split-k bucket), the post+pre fused op with the fused ffn-norm, and the
+    standalone ``mhc_post_tilelang`` used at the end of the stack / for aux
+    hidden states. ``num_tokens`` is a dynamic dim in these kernels, so
+    repeated sizes mapping to the same static config hit TileLang's cache.
+    """
+    from vllm.model_executor.kernels.mhc.tilelang import (
+        mhc_fused_post_pre_tilelang,
+        mhc_post_tilelang,
+        mhc_pre_tilelang,
+    )
+
+    max_tokens = max(token_sizes)
+    hidden_size = int(layer.hidden_size)
+    hc_mult = int(layer.hc_mult)
+    device = layer.hc_attn_fn.device
+    residual = torch.zeros(
+        max_tokens,
+        hc_mult,
+        hidden_size,
+        dtype=torch.bfloat16,
+        device=device,
+    )
+    x = torch.zeros(max_tokens, hidden_size, dtype=torch.bfloat16, device=device)
+
+    for size in token_sizes:
+        residual_slice = residual[:size]
+        post_mix, res_mix, _ = mhc_pre_tilelang(
+            residual_slice,
+            layer.hc_attn_fn,
+            layer.hc_attn_scale,
+            layer.hc_attn_base,
+            layer.rms_norm_eps,
+            layer.hc_eps,
+            layer.hc_eps,
+            layer.hc_post_alpha,
+            layer.hc_sinkhorn_iters,
+            norm_weight=layer.attn_norm.weight.data,
+            norm_eps=layer.attn_norm.variance_epsilon,
+        )
+        residual_cur, post_mix, res_mix, _ = mhc_fused_post_pre_tilelang(
+            x[:size],
+            residual_slice,
+            post_mix,
+            res_mix,
+            layer.hc_ffn_fn,
+            layer.hc_ffn_scale,
+            layer.hc_ffn_base,
+            layer.rms_norm_eps,
+            layer.hc_eps,
+            layer.hc_eps,
+            layer.hc_post_alpha,
+            layer.hc_sinkhorn_iters,
+            n_splits=1,
+            tile_n=1,
+            norm_weight=layer.ffn_norm.weight.data,
+            norm_eps=layer.ffn_norm.variance_epsilon,
+        )
+        mhc_post_tilelang(x[:size], residual_cur, post_mix, res_mix)
+
+
+def _warmup_direct_hc_head(
+    model: torch.nn.Module,
+    token_sizes: list[int],
+) -> None:
+    from vllm.model_executor.kernels.mhc.tilelang import (
+        hc_head_fused_kernel_tilelang,
+    )
+
+    max_tokens = max(token_sizes)
+    hidden_size = int(model.config.hidden_size)
+    hc_mult = int(model.hc_mult)
+    device = model.hc_head_fn.device
+    hidden_states = torch.zeros(
+        max_tokens,
+        hc_mult,
+        hidden_size,
+        dtype=torch.bfloat16,
+        device=device,
+    )
+
+    for size in token_sizes:
+        hc_head_fused_kernel_tilelang(
+            hidden_states[:size],
+            model.hc_head_fn,
+            model.hc_head_scale,
+            model.hc_head_base,
+            model.rms_norm_eps,
+            model.hc_eps,
+        )
 
 
 def _warmup_hc_head(
@@ -195,10 +328,15 @@ def deepseek_v4_mhc_warmup(
         return
 
     layer = _find_first_mhc_layer(model)
-    if layer is None:
+    direct_layer = None if layer is not None else _find_first_direct_mhc_layer(model)
+    if layer is None and direct_layer is None:
+        logger.warning(
+            "DeepSeek V4 model has no recognizable mHC layer structure; "
+            "skipping mHC TileLang warmup (kernels will JIT on first use)."
+        )
         return
 
-    device = layer.hc_attn_fn.device
+    device = (layer or direct_layer).hc_attn_fn.device
     if device.type != "cuda":
         return
 
@@ -216,9 +354,17 @@ def deepseek_v4_mhc_warmup(
         token_sizes,
     )
     with torch.inference_mode():
-        _warmup_layer_mhc(layer, token_sizes)
+        if layer is not None:
+            _warmup_layer_mhc(layer, token_sizes)
+        else:
+            _warmup_direct_layer_mhc(direct_layer, token_sizes)
         if deepseek_model is not None:
-            _warmup_hc_head(deepseek_model, token_sizes)
+            if getattr(deepseek_model, "hc_head_op", None) is not None:
+                _warmup_hc_head(deepseek_model, token_sizes)
+            elif all(
+                hasattr(deepseek_model, attr) for attr in ("rms_norm_eps", "hc_eps")
+            ):
+                _warmup_direct_hc_head(deepseek_model, token_sizes)
         torch.accelerator.synchronize()
     logger.info(
         "DeepSeek V4 mHC TileLang warmup finished in %.2f seconds.",
