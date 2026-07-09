@@ -51,31 +51,37 @@ class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
         return PoolingParams(task='embed', use_activation=bool(out_flags.get("normalize")), extra_kwargs={"outputs": out_flags})
 
     def post_process(self, model_output: Sequence[PoolingRequestOutput], request_id: str | None = None, **kwargs) -> \
-    list[dict[str, Any]]:
+    dict[str, Any]:
 
-        result: list[dict[str, Any]] = []
 
         if not (task := asyncio.current_task()):
             raise RuntimeError(f"BGEM3IOProcessorPlugin.post_process must be called from within an async task.")
+        
+        dense = [] if task._bge_flags["dense"] else None
+        colbert = [] if task._bge_flags["colbert"] else None
+        sparse = [] if task._bge_flags["sparse"] else None
+        num_toks = 0
 
         for i, output in enumerate(model_output):
             out_data = output.outputs.data[:3]
             seq_len = int(output.outputs.data[3].item())
-
-            req_output: dict[str, Any] = {} 
-            req_output["input_tokens"] = task._full_input_lengths[i]
+            
+            num_toks += task._full_input_lengths[i]
             offset = 4
 
             if out_data[0]:
-                req_output["dense"] = output.outputs.data[offset: offset + 1024].tolist()
+                assert isinstance(dense, list)
+                dense.append(output.outputs.data[offset: offset + 1024].tolist())
                 offset += 1024
             if out_data[1]:
+                assert isinstance(colbert, list)
                 colbert_sqz = output.outputs.data[offset: offset + (seq_len - 1) * 1024]
-                colbert = colbert_sqz.reshape(seq_len - 1, 1024)
-                req_output["colbert"] = colbert.tolist()
+                colbert_reshaped = colbert_sqz.reshape(seq_len - 1, 1024)
+                colbert.append(colbert_reshaped.tolist())
                 offset += (seq_len - 1) * 1024
 
             if out_data[2]:
+                assert isinstance(sparse, list)
                 unk_tok_id = 3
                 sparse_weights = output.outputs.data[offset: offset + seq_len - 2].tolist()
                 vocab_size = self.vllm_config.model_config.hf_config.vocab_size
@@ -85,8 +91,8 @@ class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
                     w = sparse_weights[idx]
                     if w > sparse_vec[token_id] and token_id != unk_tok_id:
                         sparse_vec[token_id] = w
-                req_output["sparse"] = sparse_vec
-
-            result.append(req_output)
+                sparse.append(sparse_vec)
+        
+        result: dict[str, Any] = {"input_tokens": num_toks, "dense": dense, "colbert": colbert, "sparse": sparse}
         return result
 
