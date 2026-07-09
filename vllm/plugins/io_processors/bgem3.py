@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from vllm import PoolingRequestOutput, PoolingParams
 from vllm.plugins.io_processors import IOProcessor
 import asyncio
-from transformers import AutoTokenizer
+from vllm.tokenizers import cached_tokenizer_from_config
 
 class EmbeddingPayload(TypedDict):
     model: str
@@ -32,7 +32,7 @@ class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
     def pre_process(self, prompt: EmbeddingPayload, request_id: str | None = None, **kwargs) -> list[str]:
         if not (task := asyncio.current_task()):
             raise RuntimeError(f"BGEM3IOProcessorPlugin.pre_process must be called from within an async task.")
- 
+
         task._bge_flags = {"dense": prompt["outputs"].get("dense"),
                            "colbert": prompt["outputs"].get("colbert"),
                            "sparse": prompt["outputs"].get("sparse"),
@@ -40,7 +40,7 @@ class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
 
         
         input_texts =  prompt["input"] if isinstance(prompt["input"], list) else [prompt["input"]]
-        tokenizer = AutoTokenizer.from_pretrained(self.vllm_config.model_config.tokenizer)
+        tokenizer = cached_tokenizer_from_config(self.vllm_config.model_config)
         task._full_input_lengths = [len(seq) for seq in tokenizer(input_texts)["input_ids"]]
         
 
