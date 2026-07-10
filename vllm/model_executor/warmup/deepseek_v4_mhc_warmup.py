@@ -64,6 +64,29 @@ def _normalize_token_sizes(
     return sorted({size for size in token_sizes if 1 <= size <= max_tokens})
 
 
+def _mhc_split_bucket_sizes(max_tokens: int, hc_hidden_size: int) -> list[int]:
+    """One representative token size per distinct split-k value.
+
+    ``num_tokens`` is a dynamic dim in the mhc_pre big-fuse kernels, but
+    ``n_splits`` is a static compile key computed as
+    ``num_sms // ceil(num_tokens / 64)`` (clamped). Runtime prefill sizes
+    produce division values the power-of-two ladder misses, each triggering
+    a multi-second JIT mid-serving. Enumerate every reachable ``n_splits``
+    bucket and warm one size from each.
+    """
+    from vllm.model_executor.kernels.mhc.tilelang_kernels import compute_num_split
+
+    block_m = 64
+    sizes: list[int] = []
+    seen: set[int] = set()
+    for grid_size in range(1, cdiv(max_tokens, block_m) + 1):
+        n_splits = compute_num_split(block_m, hc_hidden_size, grid_size)
+        if n_splits not in seen:
+            seen.add(n_splits)
+            sizes.append(min(grid_size * block_m, max_tokens))
+    return sizes
+
+
 def _select_mhc_warmup_token_sizes(
     *,
     max_tokens: int,
@@ -345,6 +368,14 @@ def deepseek_v4_mhc_warmup(
         max_tokens=max_tokens,
         cudagraph_capture_sizes=cudagraph_capture_sizes or [],
     )
+    if token_sizes and direct_layer is not None:
+        # The direct path dispatches split-k big-fuse kernels; cover every
+        # reachable n_splits bucket, not just the power-of-two ladder.
+        hc_hidden_size = int(direct_layer.hc_mult) * int(direct_layer.hidden_size)
+        token_sizes = _normalize_token_sizes(
+            token_sizes + _mhc_split_bucket_sizes(max(token_sizes), hc_hidden_size),
+            max_tokens=max(token_sizes),
+        )
     if not token_sizes:
         return
 
