@@ -110,7 +110,7 @@ class DispatchPooler(Pooler):
             # no "outputs" flag. Default to emitting all three heads so the dummy run
             # both survives and exercises the largest output (correct memory profiling).
             extra = pooling_metadata.pooling_params[i].extra_kwargs or {}
-            out_mask = extra.get("outputs") or {"dense": True, "colbert": True, "sparse": True}
+            out_mask = extra.get("outputs") or {"dense": True, "colbert": False, "sparse": False}
             out_data = torch.zeros([3], dtype=torch.float32, device= hidden_states.device)
             dense_req = torch.empty(0, dtype=torch.float32, device= hidden_states.device)
             colbert_req = torch.empty(0, dtype=torch.float32, device= hidden_states.device)
