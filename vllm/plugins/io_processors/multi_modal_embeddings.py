@@ -20,7 +20,7 @@ class EmbeddingOutput(TypedDict):
     pass
 
 
-class BGEM3IOProcessorPlugin(IOProcessor[list[str], Dict[str, Any]]):
+class MultiModalEmbeddingsIOProcessor(IOProcessor[list[str], Dict[str, Any]]):
 
     # No custom __init__: the base IOProcessor.__init__(vllm_config, renderer)
     # already stores vllm_config. Overriding it with a one-arg super().__init__
