@@ -106,10 +106,13 @@ class DispatchPooler(Pooler):
 
         for i in range(batch_size):
 
-            # Warmup (_dummy_pooler_run) calls the pooler with dummy metadata that has
-            # no "outputs" flag. Default to emitting all three heads so the dummy run
-            # both survives and exercises the largest output (correct memory profiling).
+            # `outputs` present → /pooling multi-vector packing; absent → plain
+            # /v1/embeddings (dense only). Per-request, so the two co-batch. The dummy
+            # warmup has no `outputs` and profiles the dense path; fine because this
+            # model is attention-free (no KV cache sized from the peak) and headroom
+            # comes from the deployment's mem_usage reservation.
             extra = pooling_metadata.pooling_params[i].extra_kwargs or {}
+            pooling = bool(extra.get("outputs"))
             out_mask = extra.get("outputs") or {"dense": True, "colbert": False, "sparse": False}
             out_data = torch.zeros([3], dtype=torch.float32, device= hidden_states.device)
             dense_req = torch.empty(0, dtype=torch.float32, device= hidden_states.device)
@@ -125,11 +128,15 @@ class DispatchPooler(Pooler):
                 sparse_req = sparse[i].flatten().to(torch.float32)
                 out_data[2] = 1
 
-            seq_len = pooling_metadata.prompt_lens[i].item()
-            metadata_len = torch.tensor([seq_len], dtype= torch.float32, device= hidden_states.device)
-            output_req = torch.cat([out_data, metadata_len, dense_req, colbert_req, sparse_req], dim=0)
-            outputs.append(output_req)
+            if pooling:
+                seq_len = pooling_metadata.prompt_lens[i].item()
+                metadata_len = torch.tensor([seq_len], dtype= torch.float32, device= hidden_states.device)
+                output_req = torch.cat([out_data, metadata_len, dense_req, colbert_req, sparse_req], dim=0)
+                outputs.append(output_req)
+            else:
+                outputs.append(dense[i])
 
+            
         return outputs
 
     def extra_repr(self) -> str:
