@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from vllm import PoolingRequestOutput, PoolingParams
 from vllm.plugins.io_processors import IOProcessor
 import asyncio
-from vllm.tokenizers import cached_tokenizer_from_config
 
 class EmbeddingPayload(TypedDict):
     model: str
@@ -38,12 +37,8 @@ class MultiModalEmbeddingsIOProcessor(IOProcessor[list[str], Dict[str, Any]]):
                            "sparse": prompt["outputs"].get("sparse"),
                            "normalize": prompt.get("normalize")}
 
-        
         input_texts =  prompt["input"] if isinstance(prompt["input"], list) else [prompt["input"]]
-        tokenizer = cached_tokenizer_from_config(self.vllm_config.model_config)
-        task._full_input_lengths = [len(seq) for seq in tokenizer(input_texts)["input_ids"]]
         
-
         return input_texts
 
     def merge_pooling_params(self, params: PoolingParams | None = None) -> PoolingParams:
@@ -52,7 +47,6 @@ class MultiModalEmbeddingsIOProcessor(IOProcessor[list[str], Dict[str, Any]]):
 
     def post_process(self, model_output: Sequence[PoolingRequestOutput], request_id: str | None = None, **kwargs) -> \
     dict[str, Any]:
-
 
         if not (task := asyncio.current_task()):
             raise RuntimeError(f"BGEM3IOProcessorPlugin.post_process must be called from within an async task.")
@@ -66,7 +60,7 @@ class MultiModalEmbeddingsIOProcessor(IOProcessor[list[str], Dict[str, Any]]):
             out_data = output.outputs.data[:3]
             seq_len = int(output.outputs.data[3].item())
             
-            num_toks += task._full_input_lengths[i]
+            num_toks += len(output.prompt_token_ids)
             offset = 4
 
             if out_data[0]:
