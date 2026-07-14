@@ -91,9 +91,9 @@ class DispatchPooler(Pooler):
 
         outputs: list[torch.Tensor] = []
         batch_size = len(pooling_metadata.prompt_lens)
-        
+
         batch_outputs = {"dense": False, "colbert": False, "sparse": False}
-        
+
         for p in pooling_metadata.pooling_params:
             p.use_activation = True #always normalize dense and colbert to match the processor_flag_embeddings implementation
             extra = p.extra_kwargs or {}
@@ -101,7 +101,7 @@ class DispatchPooler(Pooler):
             if out.get("dense"):
                 batch_outputs["dense"] = True
             if out.get("colbert"):
-                batch_outputs["colbert"] = True   
+                batch_outputs["colbert"] = True
             if out.get("sparse"):
                 batch_outputs["sparse"] = True
 
@@ -122,9 +122,8 @@ class DispatchPooler(Pooler):
         for i in range(batch_size):
             # `outputs` present → /pooling multi-vector packing; absent → plain
             # /v1/embeddings (dense only). Per-request, so the two co-batch. The dummy
-            # warmup has no `outputs` and profiles the dense path; fine because this
-            # model is attention-free (no KV cache sized from the peak) and headroom
-            # comes from the deployment's mem_usage reservation.
+            # warmup has no `outputs` and profiles the dense path; fine because
+            # headroom comes from the deployment's mem_usage reservation.
             extra = pooling_metadata.pooling_params[i].extra_kwargs or {}
             pooling = bool(extra.get("outputs"))
             out_mask = extra.get("outputs") or {"dense": True, "colbert": False, "sparse": False}
