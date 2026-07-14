@@ -89,23 +89,37 @@ class DispatchPooler(Pooler):
         pooling_metadata: PoolingMetadata,
     ) -> PoolerOutput:
 
-
-
         outputs: list[torch.Tensor] = []
         batch_size = len(pooling_metadata.prompt_lens)
-
+        
+        batch_outputs = {"dense": False, "colbert": False, "sparse": False}
+        
         for p in pooling_metadata.pooling_params:
             p.use_activation = True #always normalize dense and colbert to match the processor_flag_embeddings implementation
-        dense_pooler = self.poolers_by_task['embed']
-        dense = dense_pooler(hidden_states, pooling_metadata)
-        colbert_pooler = self.poolers_by_task['token_embed']
-        colbert = colbert_pooler(hidden_states, pooling_metadata)
-        sparse_pooler = self.poolers_by_task['token_classify']
-        sparse = sparse_pooler(hidden_states, pooling_metadata)
+            extra = p.extra_kwargs or {}
+            out = extra.get("outputs") or {"dense": True, "colbert": False, "sparse": False}
+            if out.get("dense"):
+                batch_outputs["dense"] = True
+            if out.get("colbert"):
+                batch_outputs["colbert"] = True   
+            if out.get("sparse"):
+                batch_outputs["sparse"] = True
 
+        dense = []
+        colbert = []
+        sparse = []
+
+        if batch_outputs["dense"]:
+            dense_pooler = self.poolers_by_task['embed']
+            dense = dense_pooler(hidden_states, pooling_metadata)
+        if batch_outputs["colbert"]:
+            colbert_pooler = self.poolers_by_task['token_embed']
+            colbert = colbert_pooler(hidden_states, pooling_metadata)
+        if batch_outputs["sparse"]:
+            sparse_pooler = self.poolers_by_task['token_classify']
+            sparse = sparse_pooler(hidden_states, pooling_metadata)
 
         for i in range(batch_size):
-
             # `outputs` present → /pooling multi-vector packing; absent → plain
             # /v1/embeddings (dense only). Per-request, so the two co-batch. The dummy
             # warmup has no `outputs` and profiles the dense path; fine because this
@@ -136,13 +150,11 @@ class DispatchPooler(Pooler):
             else:
                 outputs.append(dense[i])
 
-            
         return outputs
 
     def extra_repr(self) -> str:
         s = f"supported_task={self.get_supported_tasks()}"
         return s
-
 
 class IdentityPooler(Pooler):
     def get_supported_tasks(self) -> Set[PoolingTask]:
