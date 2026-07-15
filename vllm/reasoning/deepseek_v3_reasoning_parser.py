@@ -61,6 +61,10 @@ class DeepSeekV3ReasoningParser(ReasoningParser):
     def reasoning_end_str(self) -> str | None:
         return self._parser.reasoning_end_str
 
+    @property
+    def reasoning_end_token_id(self) -> int | None:
+        return getattr(self._parser, "end_token_id", None)
+
     def is_reasoning_end(self, input_ids: Sequence[int]) -> bool:
         return self._parser.is_reasoning_end(input_ids)
 

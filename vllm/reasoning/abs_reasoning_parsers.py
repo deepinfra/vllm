@@ -59,6 +59,17 @@ class ReasoningParser:
         """
         return None
 
+    @property
+    def reasoning_end_token_id(self) -> int | None:
+        """Vocab id of the single token that ends the reasoning block, or
+        None if the parser has no single-token reasoning terminal.
+
+        Used by the scheduler to truncate a multi-token speculative window
+        at `</think>` so post-reasoning positions are re-sampled under the
+        structured-output bitmask.
+        """
+        return None
+
     def has_engine_confirmed_reasoning_end(self) -> bool:
         """Whether the engine has confirmed the reasoning end transition.
 

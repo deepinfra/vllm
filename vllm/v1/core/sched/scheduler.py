@@ -1626,8 +1626,10 @@ class Scheduler(SchedulerInterface):
                 and len(generated_token_ids) > 1
             ):
                 reasoner = self.structured_output_manager._get_reasoner(request)
-                inner = getattr(reasoner, "_parser", None)
-                end_token_id = getattr(inner, "end_token_id", None)
+                # The engine-parser adapters (e.g. deepseek_v4) hold the
+                # terminal on `_parser_engine`, not `_parser`, so reach it
+                # through the uniform `reasoning_end_token_id` accessor.
+                end_token_id = getattr(reasoner, "reasoning_end_token_id", None)
                 if end_token_id is not None:
                     for boundary_idx, tid in enumerate(generated_token_ids):
                         if tid == end_token_id:
