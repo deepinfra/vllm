@@ -83,8 +83,13 @@ class XgrammarBackend(StructuredOutputBackend):
                 grammar_spec, any_whitespace=not self.disable_any_whitespace
             )
         elif request_type == StructuredOutputOptions.JSON_OBJECT:
+            # Always compact for schema-less json_object: with any_whitespace
+            # the model (esp. reasoning models under spec decode) can run away
+            # emitting unbounded whitespace after `{`, which is grammar-legal
+            # and never converges. json_schema is unaffected (it stays on the
+            # config flag) since its strict structure prevents the runaway.
             ctx = self.compiler.compile_json_schema(
-                '{"type": "object"}', any_whitespace=not self.disable_any_whitespace
+                '{"type": "object"}', any_whitespace=False
             )
         elif request_type == StructuredOutputOptions.GRAMMAR:
             ctx = self.compiler.compile_grammar(grammar_spec)
@@ -158,10 +163,21 @@ class XgrammarGrammar(StructuredOutputGrammar):
         if self._is_terminated:
             return False
         for token in tokens:
+            # Speculative decoding can propose tokens past the grammar's stop
+            # token. Feeding them to an already-terminated matcher trips an
+            # xgrammar warning and a spurious rejection; the trailing drafts
+            # are discarded downstream by the stop handler, so stop here and
+            # report success for the accepted prefix.
+            if self.matcher.is_terminated():
+                break
             if not self.matcher.accept_token(token):
-                logger.error(
-                    "Failed to advance FSM for request %s "
-                    "for tokens %s. Please file an issue.",
+                # Expected under speculative decoding: a draft token that
+                # predates / diverges from the current bitmask. Callers
+                # handle the False return (re-sample, or terminate at the
+                # commit path with their own error); no need to alarm here.
+                logger.debug(
+                    "Grammar rejected token %s for request %s "
+                    "(expected under speculative decoding).",
                     request_id,
                     token,
                 )
