@@ -225,6 +225,10 @@ class Scheduler(SchedulerInterface):
         self.finished_recving_kv_req_ids: set[str] = set()
         self.failed_recving_kv_req_ids: set[str] = set()
 
+        # Requests whose grammar compilation failed; finished with
+        # FINISHED_ERROR at the start of the next schedule() call.
+        self.failed_grammar_req_ids: set[str] = set()
+
         # Encoder-related.
         # Calculate encoder cache size if applicable
         supports_mm_inputs = mm_registry.supports_multimodal_inputs(
@@ -420,6 +424,11 @@ class Scheduler(SchedulerInterface):
 
     def schedule(self, throttle_prefills: bool = False) -> SchedulerOutput:
         self.current_step += 1
+        if self.failed_grammar_req_ids:
+            self.finish_requests(
+                self.failed_grammar_req_ids, RequestStatus.FINISHED_ERROR
+            )
+            self.failed_grammar_req_ids = set()
         # NOTE(woosuk) on the scheduling algorithm:
         # There's no "decoding phase" nor "prefill phase" in the scheduler.
         # Each request just has the num_computed_tokens and
@@ -2541,6 +2550,15 @@ class Scheduler(SchedulerInterface):
 
         if request.status == RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR:
             structured_output_req = request.structured_output_request
+            if structured_output_req and structured_output_req.error is not None:
+                logger.error(
+                    "Grammar compilation failed for request %s; "
+                    "failing the request: %s",
+                    request.request_id,
+                    structured_output_req.error,
+                )
+                self.failed_grammar_req_ids.add(request.request_id)
+                return False
             if not (structured_output_req and structured_output_req.grammar):
                 return False
             request.status = RequestStatus.WAITING

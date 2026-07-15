@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 class StructuredOutputRequest:
     params: StructuredOutputsParams
     _grammar: Future[StructuredOutputGrammar] | StructuredOutputGrammar | None = None
+    # Set when grammar compilation raised (e.g. a schema the pre-validation
+    # missed); the scheduler fails the request instead of crashing the engine.
+    error: BaseException | None = None
     reasoning_ended: bool | None = None
     # Absolute index into the request's all_token_ids of the last reasoning
     # token (the reasoning-end marker). Tokens at or before this index are
@@ -55,6 +58,12 @@ class StructuredOutputRequest:
                 self._grammar = self._grammar.result(timeout=0.0001)
                 self.status = RequestStatus.WAITING
             except TimeoutError:
+                return False
+            except Exception as e:
+                # Compilation failed; keep the request blocked and let the
+                # scheduler finish it with FINISHED_ERROR.
+                self.error = e
+                self._grammar = None
                 return False
         return True
 

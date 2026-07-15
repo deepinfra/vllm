@@ -240,6 +240,12 @@ def has_xgrammar_unsupported_json_features(schema: dict[str, Any]) -> bool:
         ):
             return True
 
+        # Tuple-form `items` (a list of schemas, JSON Schema draft-04) is
+        # rejected by the xgrammar compiler: "items must be a boolean or
+        # an object" (json_schema_converter.cc).
+        if isinstance(obj.get("items"), list):
+            return True
+
         # Unsupported keywords for strings
         if (
             obj.get("type") == "string"
